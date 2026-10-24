@@ -1,0 +1,87 @@
+name: fluxguard
+
+x-app: &app
+  build: .
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redpanda:
+      condition: service_healthy
+  deploy:
+    resources:
+      limits:
+        memory: 512M
+
+services:
+  postgres:
+    image: postgres:16.8-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fluxguard}
+      POSTGRES_USER: ${POSTGRES_USER:-fluxguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fluxguard_local_only}
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redpanda:
+    image: redpandadata/redpanda:v24.3.7
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health -X brokers=localhost:9092 | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    <<: *app
+    command: ["sh", "-c", "alembic upgrade head && uvicorn fluxguard.apps.api.main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  outbox:
+    <<: *app
+    command: ["python", "-m", "fluxguard.apps.worker.outbox"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  consumer:
+    <<: *app
+    command: ["python", "-m", "fluxguard.apps.worker.consumer"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redpanda_data:

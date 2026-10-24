@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m ruff format --check .
+      - run: python -m ruff check .
+      - run: python -m pytest -q -m "not integration"
+      - run: cp .env.example .env
+      - name: Start real integration dependencies
+        run: docker compose up -d --wait --wait-timeout 120 postgres redpanda
+      - name: Migrate integration database
+        env:
+          DATABASE_URL: postgresql+psycopg://fluxguard:fluxguard_local_only@localhost:15432/fluxguard
+        run: alembic upgrade head
+      - name: Test PostgreSQL and Redpanda integration
+        env:
+          RUN_INTEGRATION: "1"
+          DATABASE_URL: postgresql+psycopg://fluxguard:fluxguard_local_only@localhost:15432/fluxguard
+          KAFKA_BOOTSTRAP_SERVERS: localhost:19092
+        run: python -m pytest -q tests/integration
+      - if: always()
+        run: docker compose logs postgres redpanda
