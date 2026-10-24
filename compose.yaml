@@ -3,6 +3,11 @@ name: fluxguard
 x-app: &app
   build: .
   env_file: .env
+  environment:
+    INCIDENT_API_ENABLED: ${INCIDENT_API_ENABLED:-false}
+    FAULT_INJECTION_ENABLED: ${FAULT_INJECTION_ENABLED:-false}
+    CONSUMER_RETRY_INCIDENT_THRESHOLD: ${CONSUMER_RETRY_INCIDENT_THRESHOLD:-3}
+    OUTBOX_FAILURE_INCIDENT_THRESHOLD: ${OUTBOX_FAILURE_INCIDENT_THRESHOLD:-3}
   restart: unless-stopped
   depends_on:
     postgres:

@@ -1,7 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
@@ -139,3 +140,99 @@ class QuarantinedEvent(Base):
     quarantined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
+
+
+class IncidentStatus(StrEnum):
+    OPEN = "OPEN"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    RESOLVED = "RESOLVED"
+
+
+class IncidentSeverity(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class Incident(Base):
+    __tablename__ = "incidents"
+    __table_args__ = (
+        CheckConstraint("occurrence_count >= 1", name="ck_incident_occurrence_positive"),
+        CheckConstraint(
+            "status IN ('OPEN', 'ACKNOWLEDGED', 'RESOLVED')",
+            name="ck_incident_status",
+        ),
+        CheckConstraint(
+            "severity IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')",
+            name="ck_incident_severity",
+        ),
+        Index("ix_incidents_status_detected", "status", "detected_at"),
+        Index("ix_incidents_type_severity", "incident_type", "severity"),
+    )
+
+    incident_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    incident_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=IncidentStatus.OPEN.value
+    )
+    source_component: Mapped[str] = mapped_column(String(100), nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    error_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    details: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+    evidence: Mapped[list["IncidentEvidence"]] = relationship(
+        back_populates="incident", cascade="all, delete-orphan"
+    )
+
+
+class IncidentEvidence(Base):
+    __tablename__ = "incident_evidence"
+    __table_args__ = (
+        Index("ix_incident_evidence_incident_observed", "incident_id", "observed_at"),
+    )
+
+    evidence_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    incident_id: Mapped[UUID] = mapped_column(
+        ForeignKey("incidents.incident_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    evidence_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    event_id: Mapped[UUID | None] = mapped_column(index=True)
+    kafka_topic: Mapped[str | None] = mapped_column(String(255))
+    kafka_partition: Mapped[int | None] = mapped_column(Integer)
+    kafka_offset: Mapped[int | None] = mapped_column(BigInteger)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    dedup_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    incident: Mapped[Incident] = relationship(back_populates="evidence")
+
+
+class ConsumerRetryState(Base):
+    __tablename__ = "consumer_retry_state"
+    __table_args__ = (
+        UniqueConstraint("topic", "partition", "offset", name="uq_consumer_retry_record"),
+        CheckConstraint("attempt_count >= 1", name="ck_consumer_retry_attempt_positive"),
+    )
+
+    retry_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    topic: Mapped[str] = mapped_column(String(255), nullable=False)
+    partition: Mapped[int] = mapped_column(Integer, nullable=False)
+    offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_id: Mapped[UUID | None]
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    first_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_error: Mapped[str] = mapped_column(String(1000), nullable=False)

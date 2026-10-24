@@ -1,10 +1,10 @@
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from fluxguard.apps.api.service import create_order
 from fluxguard.apps.worker.outbox import publish_pending
-from fluxguard.packages.common.models import OutboxEvent
+from fluxguard.packages.common.models import Incident, IncidentEvidence, OutboxEvent
 from fluxguard.packages.common.time import utc_now
 from fluxguard.packages.contracts.orders import OrderCreateRequest
 
@@ -50,3 +50,26 @@ def test_failed_publication_remains_pending_then_restart_succeeds(session_factor
         assert event.published_at is not None
         assert event.attempts == 2
         assert len(publisher.messages) == 1
+
+
+def test_repeated_publication_failure_creates_incident_evidence(session_factory) -> None:
+    with session_factory() as session:
+        create_order(session, request(), "outbox-incident")
+    publisher = CapturingPublisher(failures=3)
+    for _ in range(3):
+        assert (
+            publish_pending(
+                session_factory,
+                publisher,
+                "orders.created.v1",
+                failure_threshold=3,
+            )
+            == 0
+        )
+        with session_factory() as session, session.begin():
+            session.scalar(select(OutboxEvent)).next_attempt_at = utc_now() - timedelta(seconds=1)
+    with session_factory() as session:
+        incident = session.scalar(select(Incident))
+        assert incident.incident_type == "OUTBOX_PUBLICATION_FAILURE"
+        assert incident.occurrence_count == 1
+        assert session.scalar(select(func.count()).select_from(IncidentEvidence)) == 1
