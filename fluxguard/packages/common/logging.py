@@ -9,15 +9,21 @@ correlation_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "correlation_id", default=None
 )
 event_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("event_id", default=None)
+incident_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "incident_id", default=None
+)
 
 
 def _add_context(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     correlation_id = correlation_id_var.get()
     event_id = event_id_var.get()
+    incident_id = incident_id_var.get()
     if correlation_id:
         event_dict["correlation_id"] = correlation_id
     if event_id:
         event_dict["event_id"] = event_id
+    if incident_id:
+        event_dict["incident_id"] = incident_id
     return event_dict
 
 

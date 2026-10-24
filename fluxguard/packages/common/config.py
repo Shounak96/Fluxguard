@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     outbox_poll_interval_seconds: float = Field(default=1.0, gt=0)
     outbox_batch_size: int = Field(default=50, gt=0, le=500)
     kafka_poll_timeout_seconds: float = Field(default=1.0, gt=0)
+    incident_api_enabled: bool = False
+    fault_injection_enabled: bool = False
+    consumer_retry_incident_threshold: int = Field(default=3, gt=0, le=100)
+    outbox_failure_incident_threshold: int = Field(default=3, gt=0, le=100)
 
 
 @lru_cache

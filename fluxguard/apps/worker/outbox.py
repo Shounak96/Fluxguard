@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from fluxguard.packages.common.config import Settings, get_settings
 from fluxguard.packages.common.db import SessionLocal
+from fluxguard.packages.common.incidents import Detection, record_incident
 from fluxguard.packages.common.logging import configure_logging, event_id_var, get_logger
 from fluxguard.packages.common.metrics import counters
-from fluxguard.packages.common.models import OutboxEvent
+from fluxguard.packages.common.models import IncidentSeverity, OutboxEvent
 from fluxguard.packages.common.time import utc_now
 
 logger = get_logger(__name__)
@@ -66,6 +67,8 @@ def publish_pending(
     publisher: EventPublisher,
     topic: str,
     batch_size: int = 50,
+    failure_threshold: int = 3,
+    fault_injection_enabled: bool = False,
 ) -> int:
     published = 0
     now = utc_now()
@@ -86,6 +89,14 @@ def publish_pending(
         for event in events:
             token = event_id_var.set(str(event.event_id))
             try:
+                fault = event.payload.get("_fault_injection")
+                if (
+                    fault_injection_enabled
+                    and isinstance(fault, dict)
+                    and fault.get("scenario") == "outbox_publish_failure"
+                    and event.attempts < max(1, min(int(fault.get("failures", 3)), 20))
+                ):
+                    raise ConnectionError("controlled outbox publication failure")
                 publisher.publish(topic, str(event.aggregate_id), event_bytes(event))
                 event.published_at = utc_now()
                 event.attempts += 1
@@ -99,8 +110,43 @@ def publish_pending(
                 event.next_attempt_at = utc_now() + timedelta(seconds=delay)
                 event.last_error = str(exc)[:4000]
                 counters.increment("outbox_publish_failed")
+                counters.increment("outbox_publication_failures")
+                if event.attempts >= failure_threshold:
+                    fault = event.payload.get("_fault_injection")
+                    scenario_id = fault.get("scenario_id") if isinstance(fault, dict) else None
+                    incident, _ = record_incident(
+                        session,
+                        Detection(
+                            incident_type="OUTBOX_PUBLICATION_FAILURE",
+                            severity=IncidentSeverity.HIGH,
+                            error_code="OUTBOX_RETRY_THRESHOLD_EXCEEDED",
+                            summary="outbox publication repeatedly failed",
+                            source_component="outbox_publisher",
+                            fingerprint_scope={
+                                "event_id": str(event.event_id),
+                                "scenario_id": scenario_id,
+                            },
+                            evidence_type="OUTBOX_PUBLISH_RETRY",
+                            evidence_payload={
+                                "attempt": event.attempts,
+                                "error_type": type(exc).__name__,
+                                "scenario_id": scenario_id,
+                                "aggregate_id": str(event.aggregate_id),
+                                "schema_version": event.schema_version,
+                            },
+                            event_id=event.event_id,
+                        ),
+                    )
+                    logger.warning(
+                        "outbox_incident_recorded",
+                        incident_id=str(incident.incident_id),
+                        source_component="outbox_publisher",
+                        error_code="OUTBOX_RETRY_THRESHOLD_EXCEEDED",
+                    )
                 logger.warning(
                     "outbox_publish_failed",
+                    source_component="outbox_publisher",
+                    error_code="OUTBOX_PUBLISH_FAILED",
                     aggregate_id=str(event.aggregate_id),
                     error=str(exc),
                     retry_seconds=delay,
@@ -121,6 +167,8 @@ def run(settings: Settings, stop: Event | None = None) -> None:
             publisher,
             settings.kafka_orders_topic,
             settings.outbox_batch_size,
+            settings.outbox_failure_incident_threshold,
+            settings.fault_injection_enabled,
         )
         if count == 0:
             stop.wait(settings.outbox_poll_interval_seconds)

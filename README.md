@@ -4,6 +4,10 @@ FluxGuard is an invariant-aware recovery platform for distributed data pipelines
 implements its reliable order-event substrate: a FastAPI producer, PostgreSQL transactional
 outbox, Redpanda/Kafka publication, and an idempotent projection consumer with durable quarantine.
 
+Milestone 2 adds deterministic incident detection, durable structured evidence, correlation,
+impact analysis, and a development-only real-broker fault-injection harness. It does not use an
+LLM and does not attempt autonomous recovery.
+
 The design provides **at-least-once delivery with idempotent effects**. It deliberately does not
 claim end-to-end exactly-once delivery: a crash after Kafka acknowledgment but before the outbox
 update can publish the same event again.
@@ -101,4 +105,14 @@ delete only this project's Compose volumes, use `docker compose down --volumes`.
 - `GET /metrics` — process-local basic counters.
 - `GET /docs` — OpenAPI UI.
 
+Development-only incident reads are disabled by default. With `ENVIRONMENT=development` and
+`INCIDENT_API_ENABLED=true`, these endpoints are available:
+
+- `GET /api/v1/incidents`
+- `GET /api/v1/incidents/{incident_id}`
+- `GET /api/v1/incidents/{incident_id}/evidence`
+- `GET /api/v1/incidents/{incident_id}/impact`
+
 Structured logs include correlation IDs on API requests and event IDs during event work.
+See [incident model](docs/incident-model.md) and
+[fault injection](docs/fault-injection.md) for Milestone 2 operations.

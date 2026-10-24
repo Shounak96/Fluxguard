@@ -40,3 +40,22 @@ now.
 Runtime and development dependencies are exactly pinned in `pyproject.toml`; PostgreSQL and Redpanda
 images are pinned in Compose. Renovation is a deliberate tested change. No paid dependency, cloud
 service, or credential is required.
+
+## ADR-007: Deterministic incident classification
+
+Failure type, severity, and error code come from explicit rules. Schema drift is medium severity;
+invalid envelopes, invariant violations, and poison messages are high severity. Normal duplicate
+delivery is an idempotency outcome, not an incident. No LLM participates in classification.
+
+## ADR-008: Evidence-aware correlation
+
+Incidents have a SHA-256 fingerprint over type, component, error code, and a type-specific scope.
+Evidence has its own deduplication key. PostgreSQL unique constraints plus row locking prevent
+concurrent writers from creating duplicate incidents or inflating occurrence counts for the same
+broker record. Details are bounded and sensitive keys are redacted before storage.
+
+## ADR-009: Development-only faults and reads
+
+Fault hooks and incident APIs require explicit flags and refuse production mode. Broker faults are
+data-driven named scenarios; payloads are never interpreted as commands. No incident mutation API
+is included because Milestone 2 has no authentication subsystem.

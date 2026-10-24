@@ -52,3 +52,20 @@ otherwise base64, and capped at 1 MB.
 available. `/health/live` and `/health/ready` distinguish process and database health. Lightweight
 in-process counters cover created/replayed orders and successful, duplicate, quarantined, and failed
 event work. They reset on restart; durable tables and logs are the audit source in this milestone.
+
+## Incident detection extension
+
+Permanent consumer failures commit quarantine, incident correlation, and evidence in one database
+transaction before the Kafka offset is committed. Retryable processing failures keep the same
+record in the consumer loop and persist bounded retry state; an incident is opened only after the
+configured threshold. Outbox failure evidence is committed in the same transaction as the attempt
+counter and next retry time.
+
+```text
+Consumer classification -> quarantine + incident + evidence -> offset commit
+Transient exception      -> retry state -> threshold incident -> retry same offset
+Outbox exception          -> attempt/backoff + threshold incident -> retry publication
+```
+
+The incident API reads only sanitized evidence. Impact analysis follows the fixed Milestone 2
+topology `API -> Outbox -> Redpanda -> Consumer -> Projection`; it is not a generic graph engine.
