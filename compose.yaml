@@ -1,13 +1,29 @@
 name: fluxguard
 
+x-app-environment: &app-environment
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fluxguard:fluxguard_local_only@postgres:5432/fluxguard}
+  KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-redpanda:9092}
+  KAFKA_ORDERS_TOPIC: ${KAFKA_ORDERS_TOPIC:-orders.created.v1}
+  KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-fluxguard-order-projection-v1}
+  OUTBOX_POLL_INTERVAL_SECONDS: ${OUTBOX_POLL_INTERVAL_SECONDS:-1.0}
+  OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-50}
+  INCIDENT_API_ENABLED: ${INCIDENT_API_ENABLED:-false}
+  FAULT_INJECTION_ENABLED: ${FAULT_INJECTION_ENABLED:-false}
+  CONSUMER_RETRY_INCIDENT_THRESHOLD: ${CONSUMER_RETRY_INCIDENT_THRESHOLD:-3}
+  OUTBOX_FAILURE_INCIDENT_THRESHOLD: ${OUTBOX_FAILURE_INCIDENT_THRESHOLD:-3}
+  INVESTIGATION_API_ENABLED: ${INVESTIGATION_API_ENABLED:-false}
+  LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+  INVESTIGATION_MODEL_ID: ${INVESTIGATION_MODEL_ID:-nvidia/nemotron-3.5-super-vl:free}
+  GEMINI_MODEL_ID: ${GEMINI_MODEL_ID:-gemini-3.5-flash-lite}
+  INVESTIGATION_ALLOW_PAID_MODELS: ${INVESTIGATION_ALLOW_PAID_MODELS:-false}
+  INVESTIGATION_MAX_LLM_CALLS: ${INVESTIGATION_MAX_LLM_CALLS:-4}
+  INVESTIGATION_MAX_ITERATIONS: ${INVESTIGATION_MAX_ITERATIONS:-2}
+
 x-app: &app
   build: .
-  env_file: .env
-  environment:
-    INCIDENT_API_ENABLED: ${INCIDENT_API_ENABLED:-false}
-    FAULT_INJECTION_ENABLED: ${FAULT_INJECTION_ENABLED:-false}
-    CONSUMER_RETRY_INCIDENT_THRESHOLD: ${CONSUMER_RETRY_INCIDENT_THRESHOLD:-3}
-    OUTBOX_FAILURE_INCIDENT_THRESHOLD: ${OUTBOX_FAILURE_INCIDENT_THRESHOLD:-3}
+  environment: *app-environment
   restart: unless-stopped
   depends_on:
     postgres:
@@ -83,6 +99,22 @@ services:
   consumer:
     <<: *app
     command: ["python", "-m", "fluxguard.apps.worker.consumer"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  investigator:
+    <<: *app
+    command: ["python", "-m", "fluxguard.apps.worker.investigator"]
+    environment:
+      <<: *app-environment
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      INVESTIGATION_REQUEST_TIMEOUT_SECONDS: ${INVESTIGATION_REQUEST_TIMEOUT_SECONDS:-30}
+      INVESTIGATION_MAX_RETRIES: ${INVESTIGATION_MAX_RETRIES:-2}
+      INVESTIGATION_EVIDENCE_LIMIT: ${INVESTIGATION_EVIDENCE_LIMIT:-50}
+      INVESTIGATION_POLL_INTERVAL_SECONDS: ${INVESTIGATION_POLL_INTERVAL_SECONDS:-2}
     depends_on:
       api:
         condition: service_healthy

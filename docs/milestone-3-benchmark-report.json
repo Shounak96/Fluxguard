@@ -1,0 +1,1079 @@
+{
+  "benchmark_execution": "historical_only",
+  "dataset_label": "exploratory_not_statistically_representative",
+  "cases": [
+    {
+      "case_id": "unsupported_schema_version",
+      "label": "Unsupported schema version",
+      "incident_type": "UNSUPPORTED_SCHEMA_VERSION",
+      "expected_error_codes": [
+        "UNSUPPORTED_SCHEMA_VERSION"
+      ],
+      "observed_fault_terms": [
+        "unsupported schema version",
+        "schema version 99",
+        "unsupported_schema_version"
+      ],
+      "root_cause_terms": [
+        "event uses schema version 99",
+        "event with schema version 99",
+        "published schema version 99"
+      ],
+      "acceptable_outcomes": [
+        "COMPLETED",
+        "INSUFFICIENT_EVIDENCE"
+      ],
+      "requires_causal_uncertainty": true,
+      "required_evidence_types": [
+        "QUARANTINED_EVENT"
+      ],
+      "required_evidence_payload": {
+        "error_code": [
+          "UNSUPPORTED_SCHEMA_VERSION"
+        ],
+        "schema_version": [
+          99
+        ]
+      },
+      "ground_truth": "A v1 consumer quarantined an orders.created.v1 event carrying schema_version 99; the persisted evidence does not establish why the producer emitted that version."
+    },
+    {
+      "case_id": "malformed_json_event",
+      "label": "Malformed JSON event",
+      "incident_type": "MALFORMED_EVENT",
+      "expected_error_codes": [
+        "MALFORMED_JSON"
+      ],
+      "observed_fault_terms": [
+        "malformed json",
+        "invalid json",
+        "malformed event"
+      ],
+      "root_cause_terms": [
+        "producer emitted malformed json",
+        "truncated json payload"
+      ],
+      "acceptable_outcomes": [
+        "COMPLETED",
+        "INSUFFICIENT_EVIDENCE"
+      ],
+      "requires_causal_uncertainty": true,
+      "required_evidence_types": [
+        "QUARANTINED_EVENT"
+      ],
+      "required_evidence_payload": {
+        "raw_sha256": [
+          "<present>"
+        ]
+      },
+      "ground_truth": "The consumer received non-JSON bytes and quarantined them; the raw-content hash proves the malformed record but does not identify the producing client."
+    },
+    {
+      "case_id": "business_invariant_violation",
+      "label": "Business invariant violation",
+      "incident_type": "BUSINESS_INVARIANT_VIOLATION",
+      "expected_error_codes": [
+        "AGGREGATE_ID_MISMATCH",
+        "ORDER_TOTAL_MISMATCH",
+        "LINE_TOTAL_MISMATCH",
+        "CONFLICTING_AGGREGATE_EVENT"
+      ],
+      "observed_fault_terms": [
+        "business invariant",
+        "order total mismatch",
+        "total does not equal",
+        "aggregate id mismatch"
+      ],
+      "root_cause_terms": [
+        "payload total does not equal its line totals",
+        "order total mismatch",
+        "aggregate id mismatch"
+      ],
+      "acceptable_outcomes": [
+        "COMPLETED",
+        "INSUFFICIENT_EVIDENCE"
+      ],
+      "requires_causal_uncertainty": true,
+      "required_evidence_types": [
+        "QUARANTINED_EVENT"
+      ],
+      "required_evidence_payload": {
+        "error_code": [
+          "ORDER_TOTAL_MISMATCH"
+        ]
+      },
+      "ground_truth": "The injected order total conflicts with verified line totals; evidence proves the invariant failure but not the upstream code defect that created it."
+    },
+    {
+      "case_id": "poison_message",
+      "label": "Poison message",
+      "incident_type": "POISON_MESSAGE",
+      "expected_error_codes": [
+        "UNPROCESSABLE_POISON_MESSAGE"
+      ],
+      "observed_fault_terms": [
+        "poison message",
+        "unprocessable poison",
+        "controlled poison"
+      ],
+      "root_cause_terms": [
+        "controlled poison message",
+        "explicit poison scenario"
+      ],
+      "acceptable_outcomes": [
+        "COMPLETED"
+      ],
+      "requires_causal_uncertainty": false,
+      "required_evidence_types": [
+        "QUARANTINED_EVENT"
+      ],
+      "required_evidence_payload": {
+        "error_code": [
+          "UNPROCESSABLE_POISON_MESSAGE"
+        ],
+        "scenario_id": [
+          "<present>"
+        ]
+      },
+      "ground_truth": "An explicit development-only poison_message scenario produced an unprocessable record that was quarantined."
+    },
+    {
+      "case_id": "transient_consumer_failure",
+      "label": "Transient consumer failure and retry exhaustion",
+      "incident_type": "REPEATED_TRANSIENT_FAILURE",
+      "expected_error_codes": [
+        "CONSUMER_RETRY_THRESHOLD_EXCEEDED"
+      ],
+      "observed_fault_terms": [
+        "transient processing failure",
+        "consumer retry threshold",
+        "repeated transient failure",
+        "retry exhaustion"
+      ],
+      "root_cause_terms": [
+        "controlled transient processing failure",
+        "transient failure exhausted the retry threshold"
+      ],
+      "acceptable_outcomes": [
+        "COMPLETED"
+      ],
+      "requires_causal_uncertainty": false,
+      "required_evidence_types": [
+        "PROCESSING_RETRY"
+      ],
+      "required_evidence_payload": {
+        "attempt": [
+          3
+        ],
+        "scenario_id": [
+          "<present>"
+        ]
+      },
+      "ground_truth": "The controlled transient_processing_failure scenario reached attempt three, created an incident, retained the offset, and was expected to recover."
+    }
+  ],
+  "results": [
+    {
+      "case_id": "malformed_json_event",
+      "source": "historical_fixture",
+      "investigation_id": "fe05d56c-4eaf-453a-bd03-a31f9c53f695",
+      "incident_id": "76251ba4-a6d7-4886-904d-1a9841330e53",
+      "persisted_status": "COMPLETED",
+      "diagnosis_outcome": "COMPLETED",
+      "operational_outcome": "validated_diagnosis",
+      "error_category": null,
+      "provider_http_status": null,
+      "cited_evidence_ids": [
+        "fb95eb76-d4fc-4eaf-90c2-794f83869623"
+      ],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": 1,
+          "reason": "diagnosis recognizes the expected fault"
+        },
+        "underlying_root_cause_correctness": {
+          "score": 0,
+          "reason": "root cause does not match deterministic case criteria"
+        },
+        "evidence_citation_validity": {
+          "score": 0,
+          "reason": "citations exist but do not meet the case evidence requirements"
+        },
+        "appropriate_uncertainty": {
+          "score": 0,
+          "reason": "confident outcome is not supported by root cause"
+        },
+        "schema_compliance": {
+          "score": 1,
+          "reason": "payload passed strict Diagnosis validation"
+        }
+      },
+      "overall_score": 40.0,
+      "usage": {
+        "model_id": "integration/fake:free",
+        "llm_calls": 2,
+        "prompt_tokens": 40,
+        "completion_tokens": 20,
+        "total_tokens": 60,
+        "latency_seconds": 0.054883,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": []
+    },
+    {
+      "case_id": "malformed_json_event",
+      "source": "historical_fixture",
+      "investigation_id": "3f2681c1-83da-428a-9b14-a933b7f7a34b",
+      "incident_id": "10b1b39d-7630-4303-bfa4-b3c7c3190d23",
+      "persisted_status": "COMPLETED",
+      "diagnosis_outcome": "COMPLETED",
+      "operational_outcome": "validated_diagnosis",
+      "error_category": null,
+      "provider_http_status": null,
+      "cited_evidence_ids": [
+        "6ed6a21a-5813-40a0-b846-6a98289ac1d1"
+      ],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": 1,
+          "reason": "diagnosis recognizes the expected fault"
+        },
+        "underlying_root_cause_correctness": {
+          "score": 0,
+          "reason": "root cause does not match deterministic case criteria"
+        },
+        "evidence_citation_validity": {
+          "score": 0,
+          "reason": "citations exist but do not meet the case evidence requirements"
+        },
+        "appropriate_uncertainty": {
+          "score": 0,
+          "reason": "confident outcome is not supported by root cause"
+        },
+        "schema_compliance": {
+          "score": 1,
+          "reason": "payload passed strict Diagnosis validation"
+        }
+      },
+      "overall_score": 40.0,
+      "usage": {
+        "model_id": "integration/fake:free",
+        "llm_calls": 2,
+        "prompt_tokens": 40,
+        "completion_tokens": 20,
+        "total_tokens": 60,
+        "latency_seconds": 0.05204,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": []
+    },
+    {
+      "case_id": "unsupported_schema_version",
+      "source": "historical_live",
+      "investigation_id": "b4cdcda0-e523-475e-b9aa-f90c631e432a",
+      "incident_id": "b5f2694d-3e05-45d3-8a25-94584116a5eb",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "application_or_validation_failure",
+      "error_category": "INVALID_MODEL_RESPONSE",
+      "provider_http_status": null,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "llm_calls": 1,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "latency_seconds": 53.842349,
+        "estimated_cost_usd": null
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "unsupported_schema_version",
+      "source": "historical_live",
+      "investigation_id": "f7200c53-d955-4b6b-87bd-bde7b397a33d",
+      "incident_id": "b5f2694d-3e05-45d3-8a25-94584116a5eb",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "application_or_validation_failure",
+      "error_category": "INVALID_MODEL_RESPONSE",
+      "provider_http_status": null,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "nvidia/nemotron-3.5-super-vl:free",
+        "llm_calls": 2,
+        "prompt_tokens": 715,
+        "completion_tokens": 1316,
+        "total_tokens": 2031,
+        "latency_seconds": 128.835259,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "malformed_json_event",
+      "source": "historical_fixture",
+      "investigation_id": "d11fa50e-83ca-42d2-ae75-e59a648c00b3",
+      "incident_id": "45bc3f37-f27f-4453-8eaa-9c82930a3a3f",
+      "persisted_status": "COMPLETED",
+      "diagnosis_outcome": "COMPLETED",
+      "operational_outcome": "validated_diagnosis",
+      "error_category": null,
+      "provider_http_status": null,
+      "cited_evidence_ids": [
+        "0a1f56b1-ef2a-4012-a813-c24e911cbb3e"
+      ],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": 1,
+          "reason": "diagnosis recognizes the expected fault"
+        },
+        "underlying_root_cause_correctness": {
+          "score": 0,
+          "reason": "root cause does not match deterministic case criteria"
+        },
+        "evidence_citation_validity": {
+          "score": 0,
+          "reason": "citations exist but do not meet the case evidence requirements"
+        },
+        "appropriate_uncertainty": {
+          "score": 0,
+          "reason": "confident outcome is not supported by root cause"
+        },
+        "schema_compliance": {
+          "score": 1,
+          "reason": "payload passed strict Diagnosis validation"
+        }
+      },
+      "overall_score": 40.0,
+      "usage": {
+        "model_id": "integration/fake:free",
+        "llm_calls": 2,
+        "prompt_tokens": 40,
+        "completion_tokens": 20,
+        "total_tokens": 60,
+        "latency_seconds": 0.048219,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": []
+    },
+    {
+      "case_id": "malformed_json_event",
+      "source": "historical_fixture",
+      "investigation_id": "5016a091-8a09-4e7a-8005-a938413d43b6",
+      "incident_id": "4b932add-3f97-48ac-83a4-6315cdfc5758",
+      "persisted_status": "COMPLETED",
+      "diagnosis_outcome": "COMPLETED",
+      "operational_outcome": "validated_diagnosis",
+      "error_category": null,
+      "provider_http_status": null,
+      "cited_evidence_ids": [
+        "b9ba017d-15b3-4ffc-9295-142b23057816"
+      ],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": 1,
+          "reason": "diagnosis recognizes the expected fault"
+        },
+        "underlying_root_cause_correctness": {
+          "score": 0,
+          "reason": "root cause does not match deterministic case criteria"
+        },
+        "evidence_citation_validity": {
+          "score": 0,
+          "reason": "citations exist but do not meet the case evidence requirements"
+        },
+        "appropriate_uncertainty": {
+          "score": 0,
+          "reason": "confident outcome is not supported by root cause"
+        },
+        "schema_compliance": {
+          "score": 1,
+          "reason": "payload passed strict Diagnosis validation"
+        }
+      },
+      "overall_score": 40.0,
+      "usage": {
+        "model_id": "integration/fake:free",
+        "llm_calls": 2,
+        "prompt_tokens": 40,
+        "completion_tokens": 20,
+        "total_tokens": 60,
+        "latency_seconds": 0.028891,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": []
+    },
+    {
+      "case_id": "malformed_json_event",
+      "source": "historical_fixture",
+      "investigation_id": "5d47001b-df17-4b17-9599-96bf3a3d26ec",
+      "incident_id": "90d420b7-7152-44db-bf43-b7efa510f7b9",
+      "persisted_status": "COMPLETED",
+      "diagnosis_outcome": "COMPLETED",
+      "operational_outcome": "validated_diagnosis",
+      "error_category": null,
+      "provider_http_status": null,
+      "cited_evidence_ids": [
+        "c13dc485-d513-4a26-a977-af2140225fb7"
+      ],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": 1,
+          "reason": "diagnosis recognizes the expected fault"
+        },
+        "underlying_root_cause_correctness": {
+          "score": 0,
+          "reason": "root cause does not match deterministic case criteria"
+        },
+        "evidence_citation_validity": {
+          "score": 0,
+          "reason": "citations exist but do not meet the case evidence requirements"
+        },
+        "appropriate_uncertainty": {
+          "score": 0,
+          "reason": "confident outcome is not supported by root cause"
+        },
+        "schema_compliance": {
+          "score": 1,
+          "reason": "payload passed strict Diagnosis validation"
+        }
+      },
+      "overall_score": 40.0,
+      "usage": {
+        "model_id": "integration/fake:free",
+        "llm_calls": 2,
+        "prompt_tokens": 40,
+        "completion_tokens": 20,
+        "total_tokens": 60,
+        "latency_seconds": 0.026945,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": []
+    },
+    {
+      "case_id": "unsupported_schema_version",
+      "source": "historical_live",
+      "investigation_id": "76c39078-7504-4707-bdb2-d4683ea6d10e",
+      "incident_id": "b5f2694d-3e05-45d3-8a25-94584116a5eb",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "application_or_validation_failure",
+      "error_category": "INVALID_MODEL_RESPONSE",
+      "provider_http_status": null,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "nvidia/nemotron-3.5-super-vl:free",
+        "llm_calls": 2,
+        "prompt_tokens": 741,
+        "completion_tokens": 818,
+        "total_tokens": 1559,
+        "latency_seconds": 32.924552,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "unsupported_schema_version",
+      "source": "historical_live",
+      "investigation_id": "4891c661-7ad2-4abc-8cc6-1186ad9b50f1",
+      "incident_id": "b5f2694d-3e05-45d3-8a25-94584116a5eb",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "provider_transport_failure",
+      "error_category": "LLM_ERROR",
+      "provider_http_status": 502,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "nvidia/nemotron-3.5-super-vl:free",
+        "llm_calls": 1,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "latency_seconds": 0.452435,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "malformed_json_event",
+      "source": "historical_fixture",
+      "investigation_id": "86e9cc59-6b4e-48eb-a0c8-50e616217bd2",
+      "incident_id": "a647a7af-7a00-41f2-837d-595292838729",
+      "persisted_status": "COMPLETED",
+      "diagnosis_outcome": "COMPLETED",
+      "operational_outcome": "validated_diagnosis",
+      "error_category": null,
+      "provider_http_status": null,
+      "cited_evidence_ids": [
+        "23a02a40-e068-471b-912b-b43bd20a1725"
+      ],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": 1,
+          "reason": "diagnosis recognizes the expected fault"
+        },
+        "underlying_root_cause_correctness": {
+          "score": 0,
+          "reason": "root cause does not match deterministic case criteria"
+        },
+        "evidence_citation_validity": {
+          "score": 0,
+          "reason": "citations exist but do not meet the case evidence requirements"
+        },
+        "appropriate_uncertainty": {
+          "score": 0,
+          "reason": "confident outcome is not supported by root cause"
+        },
+        "schema_compliance": {
+          "score": 1,
+          "reason": "payload passed strict Diagnosis validation"
+        }
+      },
+      "overall_score": 40.0,
+      "usage": {
+        "model_id": "integration/fake:free",
+        "llm_calls": 2,
+        "prompt_tokens": 40,
+        "completion_tokens": 20,
+        "total_tokens": 60,
+        "latency_seconds": 0.053018,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": []
+    },
+    {
+      "case_id": "unsupported_schema_version",
+      "source": "historical_live",
+      "investigation_id": "0a571a6b-3c7d-4a7d-94b1-e5910d9b808b",
+      "incident_id": "b5f2694d-3e05-45d3-8a25-94584116a5eb",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "provider_transport_failure",
+      "error_category": "LLM_ERROR",
+      "provider_http_status": 404,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "gemini-2.5-flash-lite",
+        "llm_calls": 1,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "latency_seconds": 0.38228,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "unsupported_schema_version",
+      "source": "historical_live",
+      "investigation_id": "3c3c1a7e-2912-4c3d-bf77-009affa1d5d3",
+      "incident_id": "b5f2694d-3e05-45d3-8a25-94584116a5eb",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "application_or_validation_failure",
+      "error_category": "LLM_ERROR",
+      "provider_http_status": 400,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "gemini-3.5-flash-lite",
+        "llm_calls": 2,
+        "prompt_tokens": 533,
+        "completion_tokens": 99,
+        "total_tokens": 632,
+        "latency_seconds": 4.353327,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "unsupported_schema_version",
+      "source": "historical_live",
+      "investigation_id": "5730cf46-6d57-4695-b513-f1ed832c49ee",
+      "incident_id": "b5f2694d-3e05-45d3-8a25-94584116a5eb",
+      "persisted_status": "INSUFFICIENT_EVIDENCE",
+      "diagnosis_outcome": "INSUFFICIENT_EVIDENCE",
+      "operational_outcome": "validated_diagnosis",
+      "error_category": null,
+      "provider_http_status": null,
+      "cited_evidence_ids": [
+        "57921278-8edc-423d-845f-d32fb307912e"
+      ],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": 1,
+          "reason": "diagnosis recognizes the expected fault"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "no underlying root cause was asserted"
+        },
+        "evidence_citation_validity": {
+          "score": 1,
+          "reason": "all citations exist, belong to the incident, and include required evidence"
+        },
+        "appropriate_uncertainty": {
+          "score": 1,
+          "reason": "uncertainty is explicit and no unsupported root cause is asserted"
+        },
+        "schema_compliance": {
+          "score": 1,
+          "reason": "payload passed strict Diagnosis validation"
+        }
+      },
+      "overall_score": 100.0,
+      "usage": {
+        "model_id": "gemini-3.5-flash-lite",
+        "llm_calls": 2,
+        "prompt_tokens": 2051,
+        "completion_tokens": 602,
+        "total_tokens": 2653,
+        "latency_seconds": 3.570165,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": []
+    },
+    {
+      "case_id": "business_invariant_violation",
+      "source": "historical_live",
+      "investigation_id": "3d68b1f9-59e3-4d04-a177-92a0f1c90df6",
+      "incident_id": "be353a97-3682-45ab-92ff-8cf26729980e",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "provider_transport_failure",
+      "error_category": "LLM_ERROR",
+      "provider_http_status": 503,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "gemini-3.5-flash-lite",
+        "llm_calls": 1,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "latency_seconds": 0.737794,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "poison_message",
+      "source": "historical_live",
+      "investigation_id": "8e26e037-73a2-4e45-a6bc-6acf1b711cd2",
+      "incident_id": "1806a34b-97de-4d62-85fb-79faa33694cb",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "provider_transport_failure",
+      "error_category": "LLM_ERROR",
+      "provider_http_status": 503,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "gemini-3.5-flash-lite",
+        "llm_calls": 1,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "latency_seconds": 0.471999,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    },
+    {
+      "case_id": "transient_consumer_failure",
+      "source": "historical_live",
+      "investigation_id": "5525b9b6-2d4d-4a27-88a7-2d8336009061",
+      "incident_id": "7dba734e-bfd8-499f-8bc3-c07e6e9cf09c",
+      "persisted_status": "FAILED",
+      "diagnosis_outcome": null,
+      "operational_outcome": "provider_transport_failure",
+      "error_category": "LLM_ERROR",
+      "provider_http_status": 500,
+      "cited_evidence_ids": [],
+      "scores": {
+        "observed_fault_recognition": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "underlying_root_cause_correctness": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "evidence_citation_validity": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "appropriate_uncertainty": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        },
+        "schema_compliance": {
+          "score": null,
+          "reason": "diagnosis is unavailable"
+        }
+      },
+      "overall_score": null,
+      "usage": {
+        "model_id": "gemini-3.5-flash-lite",
+        "llm_calls": 1,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "latency_seconds": 0.686463,
+        "estimated_cost_usd": "0.000000"
+      },
+      "notes": [
+        "no persisted diagnosis"
+      ]
+    }
+  ],
+  "summary": {
+    "historical_results": 16,
+    "live_provider": {
+      "attempts": 10,
+      "validated_diagnoses": 1,
+      "provider_transport_failures": 5,
+      "application_or_validation_failures": 4,
+      "operational_completion": {
+        "numerator": 1,
+        "denominator": 10,
+        "unavailable": 0,
+        "rate_percent": 10.0
+      },
+      "diagnostic_quality": {
+        "observed_fault_recognition": {
+          "numerator": 1,
+          "denominator": 1,
+          "unavailable": 9,
+          "rate_percent": 100.0
+        },
+        "underlying_root_cause_correctness": {
+          "numerator": 0,
+          "denominator": 0,
+          "unavailable": 10,
+          "rate_percent": null
+        },
+        "evidence_citation_validity": {
+          "numerator": 1,
+          "denominator": 1,
+          "unavailable": 9,
+          "rate_percent": 100.0
+        },
+        "appropriate_uncertainty": {
+          "numerator": 1,
+          "denominator": 1,
+          "unavailable": 9,
+          "rate_percent": 100.0
+        },
+        "schema_compliance": {
+          "numerator": 1,
+          "denominator": 1,
+          "unavailable": 9,
+          "rate_percent": 100.0
+        }
+      }
+    },
+    "deterministic_fixtures": {
+      "attempts": 6,
+      "validated_diagnoses": 6,
+      "provider_transport_failures": 0,
+      "application_or_validation_failures": 0,
+      "operational_completion": {
+        "numerator": 6,
+        "denominator": 6,
+        "unavailable": 0,
+        "rate_percent": 100.0
+      },
+      "diagnostic_quality": {
+        "observed_fault_recognition": {
+          "numerator": 6,
+          "denominator": 6,
+          "unavailable": 0,
+          "rate_percent": 100.0
+        },
+        "underlying_root_cause_correctness": {
+          "numerator": 0,
+          "denominator": 6,
+          "unavailable": 0,
+          "rate_percent": 0.0
+        },
+        "evidence_citation_validity": {
+          "numerator": 0,
+          "denominator": 6,
+          "unavailable": 0,
+          "rate_percent": 0.0
+        },
+        "appropriate_uncertainty": {
+          "numerator": 0,
+          "denominator": 6,
+          "unavailable": 0,
+          "rate_percent": 0.0
+        },
+        "schema_compliance": {
+          "numerator": 6,
+          "denominator": 6,
+          "unavailable": 0,
+          "rate_percent": 100.0
+        }
+      }
+    },
+    "live_provider_http_errors": [
+      {
+        "http_status": 400,
+        "error_category": "LLM_ERROR",
+        "count": 1
+      },
+      {
+        "http_status": 404,
+        "error_category": "LLM_ERROR",
+        "count": 1
+      },
+      {
+        "http_status": 500,
+        "error_category": "LLM_ERROR",
+        "count": 1
+      },
+      {
+        "http_status": 502,
+        "error_category": "LLM_ERROR",
+        "count": 1
+      },
+      {
+        "http_status": 503,
+        "error_category": "LLM_ERROR",
+        "count": 2
+      }
+    ],
+    "case_coverage": [
+      {
+        "case_id": "unsupported_schema_version",
+        "persisted_incidents": 1,
+        "historical_investigations": 7,
+        "evaluated_diagnoses": 1
+      },
+      {
+        "case_id": "malformed_json_event",
+        "persisted_incidents": 8,
+        "historical_investigations": 6,
+        "evaluated_diagnoses": 6
+      },
+      {
+        "case_id": "business_invariant_violation",
+        "persisted_incidents": 1,
+        "historical_investigations": 1,
+        "evaluated_diagnoses": 0
+      },
+      {
+        "case_id": "poison_message",
+        "persisted_incidents": 1,
+        "historical_investigations": 1,
+        "evaluated_diagnoses": 0
+      },
+      {
+        "case_id": "transient_consumer_failure",
+        "persisted_incidents": 1,
+        "historical_investigations": 1,
+        "evaluated_diagnoses": 0
+      }
+    ]
+  }
+}

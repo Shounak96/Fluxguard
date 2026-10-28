@@ -20,13 +20,25 @@ Implemented:
 - static pipeline impact analysis and development-restricted read APIs;
 - controlled real-Redpanda fault scenarios with production safeguards.
 
+## Milestone 3 â€” evidence-grounded AI investigation
+
+Implemented:
+
+- provider-independent OpenRouter and Gemini access with free-model enforcement and bounded retries;
+- a bounded LangGraph loop with competing hypotheses and approved read-only tools;
+- deterministic evidence-citation validation and explicit insufficient/unverified outcomes;
+- durable queued runs, background execution, migration `0003`, and restricted APIs;
+- fake-model tests plus real PostgreSQL persistence coverage without live-model calls in CI.
+
+The exploratory historical benchmark completed 1 of 10 live investigations. The validated result
+used genuine evidence and appropriate `INSUFFICIENT_EVIDENCE`, but no definitive root-cause result
+is evaluable. The sample is too small to establish provider reliability or diagnostic accuracy.
+
 ## Later milestones (not implemented)
 
-- failure detection and incident evidence collection;
-- bounded LLM investigation agents;
 - recovery-plan policy and simulation;
 - invariant gates and safe event replay orchestration;
 - recovery evaluation and operator UI.
 
-LLM behavior, autonomous schema repair, recovery execution, cloud deployment, and a monitoring
-stack remain outside Milestones 1 and 2.
+Autonomous schema repair, recovery execution, cloud deployment, and a monitoring stack remain
+outside Milestones 1â€“3.

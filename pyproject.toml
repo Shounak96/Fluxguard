@@ -12,6 +12,9 @@ dependencies = [
   "alembic==1.15.2",
   "confluent-kafka==2.8.2",
   "fastapi==0.115.12",
+  "google-genai==1.75.0",
+  "httpx==0.28.1",
+  "langgraph==1.2.17",
   "psycopg[binary]==3.2.6",
   "pydantic==2.11.3",
   "pydantic-settings==2.8.1",
@@ -22,7 +25,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx==0.28.1",
   "pytest==8.3.5",
   "pytest-cov==6.1.1",
   "ruff==0.11.6",
@@ -31,6 +33,8 @@ dev = [
 [project.scripts]
 fluxguard-outbox = "fluxguard.apps.worker.outbox:main"
 fluxguard-consumer = "fluxguard.apps.worker.consumer:main"
+fluxguard-investigator = "fluxguard.apps.worker.investigator:main"
+fluxguard-evaluate-investigations = "fluxguard.apps.evaluate_investigations:main"
 
 [tool.setuptools.packages.find]
 include = ["fluxguard*"]
