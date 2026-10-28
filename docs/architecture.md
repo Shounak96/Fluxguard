@@ -69,3 +69,21 @@ Outbox exception          -> attempt/backoff + threshold incident -> retry publi
 
 The incident API reads only sanitized evidence. Impact analysis follows the fixed Milestone 2
 topology `API -> Outbox -> Redpanda -> Consumer -> Projection`; it is not a generic graph engine.
+
+## Investigation extension
+
+The development-restricted API inserts a `PENDING` investigation and returns immediately. A
+separate worker claims it with `FOR UPDATE SKIP LOCKED`, runs the bounded LangGraph, and persists a
+sanitized diagnosis and tool history. Model access is isolated behind a provider-independent
+interface. The graph can invoke only registered read-only tools; it cannot issue SQL, shell
+commands, unrestricted network requests, or recovery actions.
+
+```text
+API enqueue -> investigation_runs -> investigator worker -> approved tools
+                                             |                  |
+                                             +-> LangGraph <- sanitized PostgreSQL evidence
+                                                       |
+                                             deterministic citation check
+                                                       |
+                                             persisted bounded diagnosis
+```

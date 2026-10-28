@@ -59,3 +59,21 @@ broker record. Details are bounded and sensitive keys are redacted before storag
 Fault hooks and incident APIs require explicit flags and refuse production mode. Broker faults are
 data-driven named scenarios; payloads are never interpreted as commands. No incident mutation API
 is included because Milestone 2 has no authentication subsystem.
+
+## ADR-010: Durable asynchronous investigations
+
+HTTP requests enqueue investigation rows rather than waiting on an external model. A separate
+worker claims pending rows, persists terminal outcomes, and marks stale interrupted work as failed
+on restart. This bounds request latency and keeps investigation state auditable.
+
+## ADR-011: Closed read-only tool registry
+
+The model selects only from six typed tools whose inputs are constructed by the application. It
+cannot submit SQL, URLs, shell commands, or mutations. Evidence payloads are bounded and sanitized
+before entering model context or durable tool history.
+
+## ADR-012: Independent evidence grounding
+
+Pydantic validates model structure, while deterministic code verifies every cited evidence ID
+against the incident or explicitly retrieved related context. One revision is allowed; a second
+failure produces `UNVERIFIED`. Confidence labels are explicitly uncalibrated assessments.

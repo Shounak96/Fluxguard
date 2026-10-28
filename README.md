@@ -8,6 +8,10 @@ Milestone 2 adds deterministic incident detection, durable structured evidence, 
 impact analysis, and a development-only real-broker fault-injection harness. It does not use an
 LLM and does not attempt autonomous recovery.
 
+Milestone 3 adds a bounded, read-only LangGraph investigation worker. It uses approved evidence
+tools, independently validates citations, reports uncertainty, and persists sanitized diagnoses.
+It investigates incidents only; it cannot execute recovery actions.
+
 The design provides **at-least-once delivery with idempotent effects**. It deliberately does not
 claim end-to-end exactly-once delivery: a crash after Kafka acknowledgment but before the outbox
 update can publish the same event again.
@@ -18,6 +22,7 @@ update can publish the same event again.
 - `outbox`: locks pending rows, publishes with `acks=all`, then records acknowledgment.
 - `consumer`: validates versioned contracts and invariants, atomically writes projection +
   processed-event marker, then commits the Kafka offset.
+- `investigator`: claims durable queued investigations and runs the bounded read-only graph.
 - PostgreSQL: authoritative orders, outbox, projections, deduplication, and quarantine.
 - Redpanda: Kafka-compatible event transport on topic `orders.created.v1`.
 
@@ -31,8 +36,9 @@ See [architecture](docs/architecture.md), [decisions](docs/decisions.md), and
 - PowerShell 7 recommended on Windows
 
 All Python versions are pinned in `pyproject.toml`. Container images are pinned in `compose.yaml`.
-Everything used in this milestone is open source or free for local development; no API key is
-needed. Values in `.env.example` are explicitly local-only credentials.
+Everything needed for the deterministic pipeline is open source or free for local development.
+Live Milestone 3 investigations require an explicitly configured free-tier provider API key;
+tests and the evaluation harness do not. Values in `.env.example` are local-only defaults.
 
 ## Start locally (PowerShell)
 
@@ -93,6 +99,21 @@ $env:KAFKA_BOOTSTRAP_SERVERS = "localhost:19092"
 python -m pytest -q tests/integration
 ```
 
+If Windows Application Control blocks a native Python dependency such as `xxhash`, run the
+Milestone 3 investigation tests in the project's Linux image instead. This uses an ephemeral
+virtual environment and mounts the workspace read-only:
+
+```powershell
+docker compose up --build -d --wait postgres redpanda api
+docker compose run --rm --no-deps `
+  -v "${PWD}:/workspace:ro" -w /workspace `
+  -e RUN_INTEGRATION=1 api sh -lc `
+  "python -m venv --system-site-packages /tmp/fluxguard-test && `
+   /tmp/fluxguard-test/bin/pip install --disable-pip-version-check pytest==8.3.5 pytest-cov==6.1.1 && `
+   /tmp/fluxguard-test/bin/python -m pytest -q tests/unit/test_investigations.py `
+     tests/unit/test_llm_validation.py tests/integration/test_investigation_persistence.py"
+```
+
 The equivalent task shortcuts are `./scripts/dev.ps1 -Task up`, `test`, `lint`, `demo`, and
 `integration`. Stop without deleting durable data using `docker compose down`. To intentionally
 delete only this project's Compose volumes, use `docker compose down --volumes`.
@@ -116,3 +137,16 @@ Development-only incident reads are disabled by default. With `ENVIRONMENT=devel
 Structured logs include correlation IDs on API requests and event IDs during event work.
 See [incident model](docs/incident-model.md) and
 [fault injection](docs/fault-injection.md) for Milestone 2 operations.
+
+Milestone 3 investigation endpoints require development mode and
+`INVESTIGATION_API_ENABLED=true`:
+
+- `POST /api/v1/incidents/{incident_id}/investigations`
+- `GET /api/v1/investigations/{investigation_id}`
+- `GET /api/v1/incidents/{incident_id}/investigations`
+
+Copy `.env.example` to the ignored `.env`, select `LLM_PROVIDER=openrouter|gemini`, and set only
+the matching `OPENROUTER_API_KEY` or `GEMINI_API_KEY`. Provider keys are passed only to the
+investigator container. The configured defaults are explicitly allowlisted free models; paid
+models and automatic provider/model fallback are disabled. See
+[investigation design](docs/investigation-design.md).

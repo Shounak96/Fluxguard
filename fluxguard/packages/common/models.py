@@ -155,6 +155,15 @@ class IncidentSeverity(StrEnum):
     CRITICAL = "CRITICAL"
 
 
+class InvestigationStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    UNVERIFIED = "UNVERIFIED"
+    FAILED = "FAILED"
+
+
 class Incident(Base):
     __tablename__ = "incidents"
     __table_args__ = (
@@ -236,3 +245,41 @@ class ConsumerRetryState(Base):
     first_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_error: Mapped[str] = mapped_column(String(1000), nullable=False)
+
+
+class InvestigationRun(Base):
+    __tablename__ = "investigation_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'RUNNING', 'COMPLETED', 'INSUFFICIENT_EVIDENCE', "
+            "'UNVERIFIED', 'FAILED')",
+            name="ck_investigation_status",
+        ),
+        CheckConstraint("llm_call_count >= 0", name="ck_investigation_call_count_nonnegative"),
+        Index("ix_investigation_incident_created", "incident_id", "created_at"),
+    )
+
+    investigation_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    incident_id: Mapped[UUID] = mapped_column(
+        ForeignKey("incidents.incident_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    model_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default=InvestigationStatus.PENDING.value
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    diagnosis: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    tool_call_history: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    llm_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_category: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(String(500))
