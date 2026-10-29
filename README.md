@@ -12,6 +12,12 @@ Milestone 3 adds a bounded, read-only LangGraph investigation worker. It uses ap
 tools, independently validates citations, reports uncertainty, and persists sanitized diagnoses.
 It investigates incidents only; it cannot execute recovery actions.
 
+Milestone 4 adds deterministic recovery plans, rollback-only PostgreSQL verification,
+development-restricted review, immutable approvals, and a controlled internal executor. The
+closed action catalog is `REPLAY_VERIFIED_EVENT`, `RESCHEDULE_OUTBOX_EVENT`,
+`RETAIN_QUARANTINE`, and `REQUEST_MANUAL_REVIEW`. AI output cannot approve or execute recovery,
+and the executor cannot issue arbitrary SQL or publish directly to Kafka.
+
 The design provides **at-least-once delivery with idempotent effects**. It deliberately does not
 claim end-to-end exactly-once delivery: a crash after Kafka acknowledgment but before the outbox
 update can publish the same event again.
@@ -23,11 +29,15 @@ update can publish the same event again.
 - `consumer`: validates versioned contracts and invariants, atomically writes projection +
   processed-event marker, then commits the Kafka offset.
 - `investigator`: claims durable queued investigations and runs the bounded read-only graph.
+- Recovery: deterministic policy, rollback-only verifier, immutable approval/audit records, and an
+  internal executor with fresh-state, evidence, write-set, and invariant checks.
 - PostgreSQL: authoritative orders, outbox, projections, deduplication, and quarantine.
 - Redpanda: Kafka-compatible event transport on topic `orders.created.v1`.
 
 See [architecture](docs/architecture.md), [decisions](docs/decisions.md), and
-[milestones](docs/milestones.md).
+[milestones](docs/milestones.md). Milestone 4 details are in the
+[recovery design](docs/milestone-4-recovery-design.md) and
+[recovery operations guide](docs/milestone-4-recovery-operations.md).
 
 ## Requirements
 
@@ -150,3 +160,26 @@ the matching `OPENROUTER_API_KEY` or `GEMINI_API_KEY`. Provider keys are passed 
 investigator container. The configured defaults are explicitly allowlisted free models; paid
 models and automatic provider/model fallback are disabled. See
 [investigation design](docs/investigation-design.md).
+
+## Verified recovery boundary
+
+Recovery review endpoints require both `ENVIRONMENT=development` and
+`RECOVERY_API_ENABLED=true`; the flag defaults to false. Approval still denies every request unless
+a trusted authorizer is injected. There is no HTTP execution endpoint, recovery worker, production
+identity provider, or production execution enablement.
+
+The verifier reloads authoritative incident-owned evidence and business state in PostgreSQL,
+simulates the exact action, checks the declared write set and postconditions, and always rolls the
+simulation back. Mutating execution requires a current approval bound to the exact plan,
+verification, evidence digest, state digest, and policy/verifier versions. Success audit and the
+business mutation commit atomically; failed execution rolls back before sanitized failure audit.
+Retries reuse the same execution ID, while conflicting content and concurrent target access fail
+closed.
+
+The reproducible local validation currently has **122 passing tests**, including three bounded
+concurrency trials, with **0 observed invariant violations** and **0 duplicate business effects**.
+The crash-after-commit case simulates loss of caller acknowledgement by retrying a committed
+execution ID; it is not an actual process-kill durability test. These exploratory local results do
+not demonstrate production recovery availability. Production still requires trusted identity and
+authorization, least-privilege database roles, execution claiming/scheduling, monitoring, and real
+process-crash validation.

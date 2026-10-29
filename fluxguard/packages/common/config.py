@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     consumer_retry_incident_threshold: int = Field(default=3, gt=0, le=100)
     outbox_failure_incident_threshold: int = Field(default=3, gt=0, le=100)
     investigation_api_enabled: bool = False
+    recovery_api_enabled: bool = False
     llm_provider: Literal["openrouter", "gemini"] = "openrouter"
     openrouter_api_key: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"

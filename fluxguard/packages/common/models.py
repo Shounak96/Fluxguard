@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -208,6 +209,7 @@ class Incident(Base):
 class IncidentEvidence(Base):
     __tablename__ = "incident_evidence"
     __table_args__ = (
+        UniqueConstraint("evidence_id", "incident_id", name="uq_incident_evidence_id_incident"),
         Index("ix_incident_evidence_incident_observed", "incident_id", "observed_at"),
     )
 
@@ -282,4 +284,212 @@ class InvestigationRun(Base):
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     llm_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_category: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(String(500))
+
+
+class RecoveryPlanEntity(Base):
+    __tablename__ = "recovery_plans"
+    __table_args__ = (
+        CheckConstraint(
+            "action_type IN ('REPLAY_VERIFIED_EVENT', 'RESCHEDULE_OUTBOX_EVENT', "
+            "'RETAIN_QUARANTINE', 'REQUEST_MANUAL_REVIEW')",
+            name="ck_recovery_plan_action",
+        ),
+        CheckConstraint(
+            "source IN ('OPERATOR', 'INVESTIGATION', 'SYSTEM')",
+            name="ck_recovery_plan_source",
+        ),
+        UniqueConstraint("plan_id", "incident_id", name="uq_recovery_plan_id_incident"),
+    )
+
+    plan_id: Mapped[UUID] = mapped_column(primary_key=True)
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    incident_id: Mapped[UUID] = mapped_column(
+        ForeignKey("incidents.incident_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    canonical_inputs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_event_sha256: Mapped[str | None] = mapped_column(String(64))
+    state_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class RecoveryPlanEvidenceLink(Base):
+    __tablename__ = "recovery_plan_evidence"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["plan_id", "incident_id"],
+            ["recovery_plans.plan_id", "recovery_plans.incident_id"],
+            ondelete="RESTRICT",
+            name="fk_recovery_evidence_plan_incident",
+        ),
+        ForeignKeyConstraint(
+            ["evidence_id", "incident_id"],
+            ["incident_evidence.evidence_id", "incident_evidence.incident_id"],
+            ondelete="RESTRICT",
+            name="fk_recovery_evidence_incident_owner",
+        ),
+    )
+
+    plan_id: Mapped[UUID] = mapped_column(primary_key=True)
+    evidence_id: Mapped[UUID] = mapped_column(primary_key=True)
+    incident_id: Mapped[UUID] = mapped_column(nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class RecoveryVerification(Base):
+    __tablename__ = "recovery_verifications"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('ELIGIBLE', 'INELIGIBLE', 'INSUFFICIENT_EVIDENCE')",
+            name="ck_recovery_verification_decision",
+        ),
+        UniqueConstraint("plan_id", name="uq_recovery_verification_plan"),
+    )
+
+    verification_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recovery_plans.plan_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    decision: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    expected_effect: Mapped[str] = mapped_column(String(50), nullable=False)
+    verifier_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    state_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    validated_event_id: Mapped[UUID | None]
+    validated_aggregate_id: Mapped[UUID | None]
+    simulated_write_set: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    postconditions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+
+class RecoveryApproval(Base):
+    __tablename__ = "recovery_approvals"
+    __table_args__ = (
+        CheckConstraint("expires_at > approved_at", name="ck_recovery_approval_expiry"),
+        UniqueConstraint("plan_id", name="uq_recovery_approval_plan"),
+        UniqueConstraint("request_key_digest", name="uq_recovery_approval_request_key"),
+    )
+
+    approval_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recovery_plans.plan_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    verification_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recovery_verifications.verification_id", ondelete="RESTRICT"), nullable=False
+    )
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    verifier_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    operator_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    identity_provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    request_key_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RecoveryLifecycleEvent(Base):
+    __tablename__ = "recovery_lifecycle_events"
+    __table_args__ = (
+        CheckConstraint("sequence_number >= 1", name="ck_recovery_lifecycle_sequence"),
+        CheckConstraint(
+            "from_state IS NULL OR from_state IN ('PROPOSED', 'VERIFIED', "
+            "'AWAITING_APPROVAL', 'APPROVED', 'EXECUTING', 'SUCCEEDED', 'NO_OP', "
+            "'FAILED', 'EXPIRED', 'REJECTED')",
+            name="ck_recovery_lifecycle_from_state",
+        ),
+        CheckConstraint(
+            "to_state IN ('PROPOSED', 'VERIFIED', 'AWAITING_APPROVAL', 'APPROVED', "
+            "'EXECUTING', 'SUCCEEDED', 'NO_OP', 'FAILED', 'EXPIRED', 'REJECTED')",
+            name="ck_recovery_lifecycle_to_state",
+        ),
+        CheckConstraint(
+            "actor_type IN ('OPERATOR', 'INVESTIGATION', 'SYSTEM')",
+            name="ck_recovery_lifecycle_actor",
+        ),
+        UniqueConstraint("plan_id", "sequence_number", name="uq_recovery_lifecycle_plan_sequence"),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recovery_plans.plan_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_state: Mapped[str | None] = mapped_column(String(30))
+    to_state: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class RecoveryExecutionRequest(Base):
+    __tablename__ = "recovery_execution_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "action_type IN ('REPLAY_VERIFIED_EVENT', 'RESCHEDULE_OUTBOX_EVENT', "
+            "'RETAIN_QUARANTINE', 'REQUEST_MANUAL_REVIEW')",
+            name="ck_recovery_execution_action",
+        ),
+        UniqueConstraint("execution_id", "plan_id", name="uq_recovery_execution_request_plan"),
+    )
+
+    execution_id: Mapped[UUID] = mapped_column(primary_key=True)
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recovery_plans.plan_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    approval_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("recovery_approvals.approval_id", ondelete="RESTRICT")
+    )
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(100), nullable=False)
+    identity_provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RecoveryExecutionEvent(Base):
+    __tablename__ = "recovery_execution_events"
+    __table_args__ = (
+        CheckConstraint("sequence_number >= 1", name="ck_recovery_execution_event_sequence"),
+        CheckConstraint(
+            "status IN ('STARTED', 'SUCCEEDED', 'NO_OP', 'FAILED')",
+            name="ck_recovery_execution_event_status",
+        ),
+        ForeignKeyConstraint(
+            ["execution_id", "plan_id"],
+            ["recovery_execution_requests.execution_id", "recovery_execution_requests.plan_id"],
+            ondelete="RESTRICT",
+            name="fk_recovery_execution_event_request",
+        ),
+        UniqueConstraint(
+            "execution_id", "sequence_number", name="uq_recovery_execution_event_sequence"
+        ),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    execution_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
+    plan_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    pre_state_digest: Mapped[str | None] = mapped_column(String(64))
+    post_state_digest: Mapped[str | None] = mapped_column(String(64))
+    applied_write_set: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(String(500))
