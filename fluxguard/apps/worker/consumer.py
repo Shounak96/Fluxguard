@@ -157,66 +157,71 @@ def parse_event(raw: bytes | None, *, fault_enabled: bool = False) -> OrderCreat
     return event
 
 
+def apply_event_in_transaction(session: Session, event: OrderCreatedEvent) -> bool:
+    """Apply a valid event inside the caller-owned transaction."""
+    existing = session.get(OrderProjection, event.aggregate_id)
+    payload = event.payload.model_dump(mode="json")
+    if existing is not None and existing.payload != payload:
+        raise PermanentEventError(
+            "aggregate already has a projection from a conflicting event",
+            incident_type="BUSINESS_INVARIANT_VIOLATION",
+            error_code="CONFLICTING_AGGREGATE_EVENT",
+            context={"aggregate_id": str(event.aggregate_id)},
+        )
+    values = {
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+        "aggregate_id": event.aggregate_id,
+    }
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        claim = postgresql_insert(ProcessedEvent).values(**values)
+        claim = claim.on_conflict_do_nothing(index_elements=[ProcessedEvent.event_id]).returning(
+            ProcessedEvent.event_id
+        )
+    elif dialect == "sqlite":
+        claim = sqlite_insert(ProcessedEvent).values(**values)
+        claim = claim.on_conflict_do_nothing(index_elements=[ProcessedEvent.event_id]).returning(
+            ProcessedEvent.event_id
+        )
+    else:
+        if session.get(ProcessedEvent, event.event_id) is not None:
+            return False
+        session.add(ProcessedEvent(**values))
+        claim = None
+    if claim is not None:
+        claimed_event_id = session.execute(claim).scalar_one_or_none()
+        if claimed_event_id is None:
+            session.execute(
+                update(ProcessedEvent)
+                .where(ProcessedEvent.event_id == event.event_id)
+                .values(
+                    delivery_count=ProcessedEvent.delivery_count + 1,
+                    last_seen_at=datetime.now(UTC),
+                )
+            )
+            return False
+    if existing is None:
+        session.add(
+            OrderProjection(
+                order_id=event.payload.order_id,
+                source_event_id=event.event_id,
+                customer_id=event.payload.customer_id,
+                currency=event.payload.currency,
+                total=event.payload.total,
+                item_count=sum(item.quantity for item in event.payload.items),
+                payload=payload,
+                created_at=event.payload.created_at,
+            )
+        )
+    session.flush()
+    return True
+
+
 def apply_event(session: Session, event: OrderCreatedEvent) -> bool:
     """Apply one valid event atomically. Returns False for a duplicate event ID."""
     with session.begin():
-        existing = session.get(OrderProjection, event.aggregate_id)
-        payload = event.payload.model_dump(mode="json")
-        if existing is not None and existing.payload != payload:
-            raise PermanentEventError(
-                "aggregate already has a projection from a conflicting event",
-                incident_type="BUSINESS_INVARIANT_VIOLATION",
-                error_code="CONFLICTING_AGGREGATE_EVENT",
-                context={"aggregate_id": str(event.aggregate_id)},
-            )
-        values = {
-            "event_id": event.event_id,
-            "event_type": event.event_type,
-            "aggregate_id": event.aggregate_id,
-        }
-        dialect = session.get_bind().dialect.name
-        if dialect == "postgresql":
-            claim = postgresql_insert(ProcessedEvent).values(**values)
-            claim = claim.on_conflict_do_nothing(
-                index_elements=[ProcessedEvent.event_id]
-            ).returning(ProcessedEvent.event_id)
-        elif dialect == "sqlite":
-            claim = sqlite_insert(ProcessedEvent).values(**values)
-            claim = claim.on_conflict_do_nothing(
-                index_elements=[ProcessedEvent.event_id]
-            ).returning(ProcessedEvent.event_id)
-        else:
-            if session.get(ProcessedEvent, event.event_id) is not None:
-                return False
-            session.add(ProcessedEvent(**values))
-            claim = None
-        if claim is not None:
-            claimed_event_id = session.execute(claim).scalar_one_or_none()
-            if claimed_event_id is None:
-                session.execute(
-                    update(ProcessedEvent)
-                    .where(ProcessedEvent.event_id == event.event_id)
-                    .values(
-                        delivery_count=ProcessedEvent.delivery_count + 1,
-                        last_seen_at=datetime.now(UTC),
-                    )
-                )
-                return False
-        if existing is None:
-            session.add(
-                OrderProjection(
-                    order_id=event.payload.order_id,
-                    source_event_id=event.event_id,
-                    customer_id=event.payload.customer_id,
-                    currency=event.payload.currency,
-                    total=event.payload.total,
-                    item_count=sum(item.quantity for item in event.payload.items),
-                    payload=payload,
-                    created_at=event.payload.created_at,
-                )
-            )
-        session.flush()
-    return True
+        return apply_event_in_transaction(session, event)
 
 
 def _quarantine_in_transaction(

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from fluxguard.apps.api.incidents import router as incidents_router
 from fluxguard.apps.api.investigations import router as investigations_router
+from fluxguard.apps.api.recoveries import router as recoveries_router
 from fluxguard.apps.api.service import IdempotencyConflictError, create_order
 from fluxguard.packages.common.config import get_settings
 from fluxguard.packages.common.db import get_session
@@ -37,6 +38,7 @@ def create_app(session_dependency: Callable = get_session) -> FastAPI:
     app = FastAPI(title="FluxGuard Order API", version="0.1.0", lifespan=lifespan)
     app.include_router(incidents_router)
     app.include_router(investigations_router)
+    app.include_router(recoveries_router)
 
     @app.middleware("http")
     async def correlation_middleware(request: Request, call_next):
