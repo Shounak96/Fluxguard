@@ -1,0 +1,54 @@
+name: Isolated end-to-end demo
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE_PROJECT_NAME: fluxguard-demo-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Create workflow-scoped database credential
+        run: |
+          VALUE="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+          echo "::add-mask::$VALUE"
+          echo "POSTGRES_PASSWORD=$VALUE" >> "$GITHUB_ENV"
+      - name: Start disposable local dependencies
+        run: docker compose up -d --wait --wait-timeout 120 postgres redpanda
+      - name: Run bounded isolated demo
+        env:
+          BENCHMARK_KAFKA_BOOTSTRAP_SERVERS: localhost:19092
+        run: |
+          export BENCHMARK_POSTGRES_ADMIN_URL="postgresql+psycopg://fluxguard:${POSTGRES_PASSWORD}@localhost:15432/postgres"
+          fluxguard-benchmark --mode end-to-end-demo --serial-trials 1 \
+            --concurrency-trials 1 --output-dir build/demo
+      - name: Verify sanitized artifact bundle
+        run: |
+          RUN_DIRECTORY="$(find build/demo -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test -n "$RUN_DIRECTORY"
+          fluxguard-verify-benchmark "$RUN_DIRECTORY" --format json
+          fluxguard-verify-benchmark "$RUN_DIRECTORY" --format text
+      - name: Upload verified demo artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxguard-end-to-end-demo
+          path: build/demo/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Show dependency logs on failure
+        if: failure()
+        run: docker compose logs postgres redpanda
+      - name: Stop workflow-owned services
+        if: always()
+        run: docker compose down --volumes --remove-orphans

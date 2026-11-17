@@ -1,9 +1,10 @@
+import hashlib
 from datetime import timedelta
 
 from sqlalchemy import func, select
 
 from fluxguard.apps.api.service import create_order
-from fluxguard.apps.worker.outbox import publish_pending
+from fluxguard.apps.worker.outbox import event_bytes, publish_pending
 from fluxguard.packages.common.models import Incident, IncidentEvidence, OutboxEvent
 from fluxguard.packages.common.time import utc_now
 from fluxguard.packages.contracts.orders import OrderCreateRequest
@@ -70,6 +71,9 @@ def test_repeated_publication_failure_creates_incident_evidence(session_factory)
             session.scalar(select(OutboxEvent)).next_attempt_at = utc_now() - timedelta(seconds=1)
     with session_factory() as session:
         incident = session.scalar(select(Incident))
+        evidence = session.scalar(select(IncidentEvidence))
+        outbox = session.scalar(select(OutboxEvent))
         assert incident.incident_type == "OUTBOX_PUBLICATION_FAILURE"
         assert incident.occurrence_count == 1
         assert session.scalar(select(func.count()).select_from(IncidentEvidence)) == 1
+        assert evidence.payload["raw_sha256"] == hashlib.sha256(event_bytes(outbox)).hexdigest()
