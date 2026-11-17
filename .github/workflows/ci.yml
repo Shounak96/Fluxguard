@@ -28,8 +28,11 @@ jobs:
       - name: Test PostgreSQL and Redpanda integration
         env:
           RUN_INTEGRATION: "1"
+          RUN_BENCHMARK_INTEGRATION: "1"
           DATABASE_URL: postgresql+psycopg://fluxguard:fluxguard_local_only@localhost:15432/fluxguard
           KAFKA_BOOTSTRAP_SERVERS: localhost:19092
-        run: python -m pytest -q tests/integration
+          BENCHMARK_POSTGRES_ADMIN_URL: postgresql+psycopg://fluxguard:fluxguard_local_only@localhost:15432/postgres
+          BENCHMARK_KAFKA_BOOTSTRAP_SERVERS: localhost:19092
+        run: python -m pytest -q tests/integration --ignore=tests/integration/test_benchmark_demo.py
       - if: always()
         run: docker compose logs postgres redpanda

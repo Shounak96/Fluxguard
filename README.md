@@ -183,3 +183,19 @@ execution ID; it is not an actual process-kill durability test. These explorator
 not demonstrate production recovery availability. Production still requires trusted identity and
 authorization, least-privilege database roles, execution claiming/scheduling, monitoring, and real
 process-crash validation.
+
+## Isolated benchmark demo
+
+The Milestone 5 demo runs against disposable PostgreSQL data and a run-scoped Redpanda topic. From
+PowerShell, use the documented single Docker command in
+[the Milestone 5 design](docs/milestone-5-design.md#single-command-isolated-demo). It writes a
+checksummed bundle below `build/demo/<run-id>`. Inspect and verify it with:
+
+```powershell
+fluxguard-observe-benchmark build/demo/<run-id>/benchmark-<run-id>.json --format text
+fluxguard-verify-benchmark build/demo/<run-id> --format text
+```
+
+The demo uses deterministic evidence inspection and an isolated test identity; it does not call an
+LLM or enable production recovery. Its injected publisher failure is not a broker outage, and its
+small local timing sample is not a production SLA.

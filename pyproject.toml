@@ -35,6 +35,9 @@ fluxguard-outbox = "fluxguard.apps.worker.outbox:main"
 fluxguard-consumer = "fluxguard.apps.worker.consumer:main"
 fluxguard-investigator = "fluxguard.apps.worker.investigator:main"
 fluxguard-evaluate-investigations = "fluxguard.apps.evaluate_investigations:main"
+fluxguard-benchmark = "fluxguard.apps.benchmark:main"
+fluxguard-observe-benchmark = "fluxguard.apps.observe_benchmark:main"
+fluxguard-verify-benchmark = "fluxguard.apps.verify_benchmark:main"
 
 [tool.setuptools.packages.find]
 include = ["fluxguard*"]

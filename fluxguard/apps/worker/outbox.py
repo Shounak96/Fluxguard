@@ -1,3 +1,4 @@
+import hashlib
 import json
 import signal
 import time
@@ -133,6 +134,7 @@ def publish_pending(
                                 "scenario_id": scenario_id,
                                 "aggregate_id": str(event.aggregate_id),
                                 "schema_version": event.schema_version,
+                                "raw_sha256": hashlib.sha256(event_bytes(event)).hexdigest(),
                             },
                             event_id=event.event_id,
                         ),
