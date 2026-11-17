@@ -1,5 +1,8 @@
 # Architecture
 
+See [architecture and trust-boundary diagrams](architecture-diagrams.md) for the component map,
+authorization boundaries, and eligible/rejected recovery sequences.
+
 ## Data flow
 
 ```text
@@ -51,7 +54,8 @@ otherwise base64, and capped at 1 MB.
 `structlog` emits JSON with UTC timestamp, level, event name, correlation ID, and event ID where
 available. `/health/live` and `/health/ready` distinguish process and database health. Lightweight
 in-process counters cover created/replayed orders and successful, duplicate, quarantined, and failed
-event work. They reset on restart; durable tables and logs are the audit source in this milestone.
+event work. They reset on restart; durable tables and immutable lifecycle records are the audit
+source of truth.
 
 ## Incident detection extension
 
@@ -87,3 +91,46 @@ API enqueue -> investigation_runs -> investigator worker -> approved tools
                                                        |
                                              persisted bounded diagnosis
 ```
+
+The historical live-provider evaluation completed one validated diagnosis in ten attempts. That
+diagnosis was appropriately `INSUFFICIENT_EVIDENCE`; the sample does not establish provider
+reliability or root-cause accuracy. The recovery demo therefore uses deterministic evidence
+inspection and does not present itself as a live AI investigation.
+
+## Recovery extension
+
+Recovery is a closed, deterministic workflow over persisted plans and evidence:
+
+1. Policy evaluates an immutable plan against incident-owned evidence, exact event identity,
+   supported contracts, business invariants, and current state.
+2. The verifier reloads authoritative PostgreSQL rows in a dedicated `REPEATABLE READ` transaction,
+   acquires stable advisory locks, simulates only the declared write set, validates postconditions,
+   and always rolls back.
+3. Approval binds a trusted operator identity to the exact plan hash, verification record, evidence
+   digest, state digest, policy/verifier versions, and expiry.
+4. The internal executor reloads every binding under locks, re-evaluates eligibility, and commits
+   the allowed business mutation with terminal audit records in one transaction.
+
+The action catalog is limited to `REPLAY_VERIFIED_EVENT`, `RESCHEDULE_OUTBOX_EVENT`,
+`RETAIN_QUARANTINE`, and `REQUEST_MANUAL_REVIEW`. Replay requires authoritative retained bytes or an
+exact outbox envelope; missing data is never reconstructed. Outbox recovery changes scheduling
+state only—the normal publisher remains responsible for Kafka publication.
+
+There is no public execution endpoint or recovery worker. Runtime approval and execution
+authorizers deny by default because no production identity provider is configured. Test identities
+exist only inside isolated integration and demo processes.
+
+## Benchmark and demo isolation
+
+The benchmark runner creates a UUID-named PostgreSQL database, Redpanda topic, and consumer-group
+namespace. Database work requires a persisted ownership token; broker cleanup accepts only the
+run-owned namespace. Existing-resource collisions fail closed, and workers stop before groups,
+topics, and the database are removed.
+
+Reports separate `REAL_INTEGRATION`, `DETERMINISTIC_SIMULATION`, `DETERMINISTIC_FIXTURE`,
+`LIVE_PROVIDER`, and `HISTORICAL` evidence. Metrics retain explicit numerator, denominator, and
+unavailable counts. The artifact verifier checks checksums, schema versions, run identity, outcome
+reconstruction, audit reconciliation, and sensitive-data rejection.
+
+These controls make local results reproducible; they do not prove production availability,
+multi-node durability, failover, or service-level objectives.

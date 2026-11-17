@@ -1,44 +1,69 @@
-# Milestones
+# Implemented milestones
 
 ## Milestone 1 — reliable order event pipeline
 
-Implemented:
-
-- validated, idempotent order submission and exact Decimal totals;
-- transactional outbox with acknowledged Kafka-compatible publication;
-- schema-checked, invariant-aware, idempotent projection consumer;
-- durable malformed-event quarantine and transient retry behavior;
-- Alembic schema, Docker Compose runtime, unit/integration tests, CI, and Windows instructions.
+- Validated, idempotent order submission with exact `Decimal` totals
+- Transactional outbox with acknowledged Kafka-compatible publication
+- Schema-checked, invariant-aware, idempotent projection consumer
+- Durable malformed-event quarantine and transient retry behavior
+- Alembic schema, Docker Compose runtime, unit/integration tests, and CI
 
 ## Milestone 2 — incident detection and evidence
 
-Implemented:
+- Deterministic schema, envelope, invariant, poison, retry, and publication-failure detection
+- Correlated durable incidents and bounded, redacted per-occurrence evidence
+- Transactionally coordinated quarantine/evidence and threshold retry tracking
+- Static pipeline impact analysis and development-restricted read APIs
+- Controlled real-Redpanda fault scenarios with production safeguards
 
-- deterministic schema, envelope, invariant, poison, retry, and publication-failure detection;
-- correlated durable incidents and bounded, redacted per-occurrence evidence;
-- transactionally coordinated quarantine/evidence and threshold retry tracking;
-- static pipeline impact analysis and development-restricted read APIs;
-- controlled real-Redpanda fault scenarios with production safeguards.
+## Milestone 3 — evidence-grounded AI investigation
 
-## Milestone 3 â€” evidence-grounded AI investigation
+- Provider-independent OpenRouter and Gemini adapters with explicit free-model enforcement
+- Bounded LangGraph workflow with competing hypotheses and approved read-only tools
+- Strict structured-output parsing and independent evidence-citation validation
+- Explicit `INSUFFICIENT_EVIDENCE` and `UNVERIFIED` outcomes
+- Durable queued investigations, background execution, and restricted APIs
+- Deterministic evaluation harness separating fixtures, historical data, and live-provider attempts
 
-Implemented:
+The exploratory historical live-provider evaluation completed one validated diagnosis in ten
+attempts. It used verified evidence and appropriate uncertainty but produced no evaluable definitive
+root cause. The sample does not establish provider reliability or diagnostic accuracy.
 
-- provider-independent OpenRouter and Gemini access with free-model enforcement and bounded retries;
-- a bounded LangGraph loop with competing hypotheses and approved read-only tools;
-- deterministic evidence-citation validation and explicit insufficient/unverified outcomes;
-- durable queued runs, background execution, migration `0003`, and restricted APIs;
-- fake-model tests plus real PostgreSQL persistence coverage without live-model calls in CI.
+## Milestone 4 — invariant-verified recovery
 
-The exploratory historical benchmark completed 1 of 10 live investigations. The validated result
-used genuine evidence and appropriate `INSUFFICIENT_EVIDENCE`, but no definitive root-cause result
-is evaluable. The sample is too small to establish provider reliability or diagnostic accuracy.
+- Closed, versioned recovery plan and eligibility contracts
+- Immutable plans, verification records, approvals, execution records, and lifecycle audit
+- PostgreSQL `REPEATABLE READ` rollback-only verification using authoritative state
+- Evidence ownership, content hash, state digest, write-set, invariant, and postcondition checks
+- Approval binding, expiry, stale-state rejection, and deny-by-default authorization
+- Internal idempotent executor with advisory locks and no direct Kafka publication
+- Real PostgreSQL concurrency and rollback validation
 
-## Later milestones (not implemented)
+Production approval and execution remain disabled. No public execution endpoint, unrestricted
+worker, or production identity provider exists.
 
-- recovery-plan policy and simulation;
-- invariant gates and safe event replay orchestration;
-- recovery evaluation and operator UI.
+## Milestone 5 — benchmarks, observability, and reproducible demo
 
-Autonomous schema repair, recovery execution, cloud deployment, and a monitoring stack remain
-outside Milestones 1â€“3.
+- Versioned evidence-classed benchmark reports with explicit metric denominators
+- Disposable PostgreSQL/Redpanda runner with owned cleanup and bounded trials
+- Real recovery-safety scenarios plus separately classified deterministic simulation
+- Audit reconciliation and operational-summary CLI
+- Isolated end-to-end recovery and rejection demo
+- Schema-validated, checksummed artifact bundles and independent verification CLI
+- Manual GitHub Actions demo with workflow-scoped credentials and resource cleanup
+
+The bounded recovery-safety result contains 19 real integration trials and one simulation: 8/8
+eligible recoveries, 7/7 unsafe-action rejections, 9/9 safe concurrency trials, and no observed
+duplicate business effects or invariant violations. These local single-node results are exploratory,
+not production reliability or capacity claims.
+
+## Remaining work
+
+- Production identity provider, authorization policy, and least-privilege database roles
+- Production recovery claiming, scheduling, operational monitoring, and incident-resolution policy
+- Real process-kill, broker-outage, network-partition, failover, and multi-node durability testing
+- A dedicated read-only investigator database role
+- Operator-facing workflow or UI, if justified by a separately reviewed security model
+
+Autonomous schema repair, unrestricted replay, arbitrary SQL recovery, cloud deployment, and a
+production monitoring stack are not implemented.

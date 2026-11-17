@@ -1,201 +1,293 @@
 # FluxGuard
 
-FluxGuard is an invariant-aware recovery platform for distributed data pipelines. Milestone 1
-implements its reliable order-event substrate: a FastAPI producer, PostgreSQL transactional
-outbox, Redpanda/Kafka publication, and an idempotent projection consumer with durable quarantine.
+**Evidence-grounded investigation and invariant-verified recovery for distributed event pipelines.**
 
-Milestone 2 adds deterministic incident detection, durable structured evidence, correlation,
-impact analysis, and a development-only real-broker fault-injection harness. It does not use an
-LLM and does not attempt autonomous recovery.
+FluxGuard is a local-first engineering project for detecting, investigating, and safely recovering
+failed events without turning replay into an unrestricted mutation mechanism. It combines an
+at-least-once order pipeline with durable incident evidence, a bounded AI investigation layer, and
+deterministic PostgreSQL-backed recovery controls.
 
-Milestone 3 adds a bounded, read-only LangGraph investigation worker. It uses approved evidence
-tools, independently validates citations, reports uncertainty, and persists sanitized diagnoses.
-It investigates incidents only; it cannot execute recovery actions.
+Production approval and recovery execution are intentionally disabled. The implemented recovery
+path is available only through trusted internal code and isolated test/demo fixtures.
 
-Milestone 4 adds deterministic recovery plans, rollback-only PostgreSQL verification,
-development-restricted review, immutable approvals, and a controlled internal executor. The
-closed action catalog is `REPLAY_VERIFIED_EVENT`, `RESCHEDULE_OUTBOX_EVENT`,
-`RETAIN_QUARANTINE`, and `REQUEST_MANUAL_REVIEW`. AI output cannot approve or execute recovery,
-and the executor cannot issue arbitrary SQL or publish directly to Kafka.
+## The problem
 
-The design provides **at-least-once delivery with idempotent effects**. It deliberately does not
-claim end-to-end exactly-once delivery: a crash after Kafka acknowledgment but before the outbox
-update can publish the same event again.
+Distributed event pipelines fail in ambiguous ways: publishers time out after acknowledgement,
+consumers receive malformed or unsupported events, retries exhaust, and projections conflict with
+authoritative state. Blind replay is dangerous because it can duplicate business effects, overwrite
+healthy records, or apply data that never satisfied the original business invariants.
 
-## Components
+## The approach
 
-- `api`: validates orders, calculates Decimal totals, and commits order + outbox atomically.
-- `outbox`: locks pending rows, publishes with `acks=all`, then records acknowledgment.
-- `consumer`: validates versioned contracts and invariants, atomically writes projection +
-  processed-event marker, then commits the Kafka offset.
-- `investigator`: claims durable queued investigations and runs the bounded read-only graph.
-- Recovery: deterministic policy, rollback-only verifier, immutable approval/audit records, and an
-  internal executor with fresh-state, evidence, write-set, and invariant checks.
-- PostgreSQL: authoritative orders, outbox, projections, deduplication, and quarantine.
-- Redpanda: Kafka-compatible event transport on topic `orders.created.v1`.
+FluxGuard separates diagnosis from authority:
 
-See [architecture](docs/architecture.md), [decisions](docs/decisions.md), and
-[milestones](docs/milestones.md). Milestone 4 details are in the
-[recovery design](docs/milestone-4-recovery-design.md) and
-[recovery operations guide](docs/milestone-4-recovery-operations.md).
+1. The pipeline persists exact failure evidence and correlates it to an incident.
+2. A bounded, read-only investigator can propose evidence-cited hypotheses and uncertainty.
+3. Deterministic policy decides whether a closed recovery action is eligible.
+4. A PostgreSQL dry run simulates the declared write set and always rolls back.
+5. Approval binds the exact plan, evidence, state digest, policy, verifier version, and expiry.
+6. The internal executor reloads every precondition and commits the business effect with immutable
+   audit records—or fails closed.
 
-## Requirements
+An AI diagnosis can provide context, but it cannot approve a plan, execute recovery, issue arbitrary
+SQL, or bypass deterministic evidence and invariant checks.
+
+## Architecture
+
+| Area | Implemented responsibility |
+| --- | --- |
+| FastAPI | Validates idempotent order commands, calculates exact `Decimal` totals, and atomically writes orders plus outbox records. |
+| PostgreSQL | Authoritative orders, transactional outbox, projections, processed-event markers, quarantine, incidents, evidence, investigations, recovery plans, approvals, execution records, and audit history. |
+| Outbox publisher | Locks pending rows, publishes with `acks=all`, and records broker acknowledgement. |
+| Redpanda | Kafka-compatible local event transport for versioned order events. |
+| Consumer | Validates contracts and invariants, applies projections idempotently, quarantines permanent failures, and never advances offsets past unpersisted failures. |
+| Incident detection | Classifies failures deterministically and persists bounded, redacted, correlated evidence. |
+| Investigator | Runs a bounded LangGraph workflow using an explicitly selected OpenRouter or Gemini adapter and six approved read-only tools. |
+| Recovery policy | Produces typed, explainable eligibility decisions for a closed action catalog; missing or uncertain evidence fails closed. |
+| Verifier | Reloads authoritative state, simulates the declared action in a dedicated PostgreSQL transaction, checks invariants/write sets, and unconditionally rolls back. |
+| Approval and executor | Require trusted authorization and fresh persisted bindings; execution is idempotent, concurrency-controlled, internal-only, and audited. |
+| Benchmark harness | Creates owned disposable PostgreSQL/Redpanda resources, records evidence-classed outcomes and timings, and emits independently verifiable artifacts. |
+
+The supported recovery actions are `REPLAY_VERIFIED_EVENT`, `RESCHEDULE_OUTBOX_EVENT`,
+`RETAIN_QUARANTINE`, and `REQUEST_MANUAL_REVIEW`. Recovery never synthesizes missing event bytes,
+publishes directly to Kafka, or exposes an arbitrary SQL interface.
+
+See [architecture](docs/architecture.md), [engineering decisions](docs/decisions.md), and the
+[recovery design](docs/milestone-4-recovery-design.md) for the deeper system boundaries. The
+[component, trust-boundary, and recovery-sequence diagrams](docs/architecture-diagrams.md) provide
+a compact visual overview.
+
+## Technical highlights
+
+- At-least-once publication with idempotent business effects
+- Transactional outbox and manual Kafka offset management
+- Versioned Pydantic contracts and exact financial invariants
+- Durable quarantine, incident correlation, and persisted failure evidence
+- Provider-independent, bounded AI investigation with competing hypotheses
+- Strict structured-output validation and independent evidence-citation verification
+- Deterministic recovery policy with stable plan identities and state/evidence digests
+- PostgreSQL `REPEATABLE READ` rollback-only verification
+- Declared write-set, postcondition, and unrelated-state validation
+- Approval-bound, expiring, idempotent internal execution
+- Immutable lifecycle, verification, approval, execution, and failure audit records
+- Bounded concurrency validation against consumer, publisher, and executor races
+- Reproducible benchmark isolation and checksummed JSON artifact bundles
+
+FluxGuard deliberately does not claim end-to-end exactly-once delivery. A publisher can crash after
+the broker acknowledges a record but before PostgreSQL records that acknowledgement; downstream
+idempotency prevents a second business effect.
+
+## Verified benchmark evidence
+
+### Recovery-safety benchmark
+
+The bounded local benchmark used disposable PostgreSQL data and run-scoped Redpanda resources. It
+recorded 19 `REAL_INTEGRATION` trials and one separately classified
+`DETERMINISTIC_SIMULATION`—the cohorts are not pooled into a single success rate.
+
+| Measurement | Result | Denominator |
+| --- | ---: | --- |
+| Eligible recovery success | 8/8 | Real trials whose expected outcome was `RECOVERED` |
+| Unsafe-action rejection | 7/7 | Real trials whose expected outcome was `SAFELY_REJECTED` |
+| Concurrency safety | 9/9 | Three trials each for executor/executor, consumer/executor, and publisher/executor races |
+| Duplicate business effects | 0/19 real; 0/1 simulation | Every conclusive result in its evidence cohort |
+| Invariant violations | 0/19 real; 0/1 simulation | Every conclusive result in its evidence cohort |
+
+The remaining real outcomes were one verified no-op and three expected operational conflicts in the
+consumer/executor race. The simulation injected a transactional failure and verified rollback; it
+was not a real process crash.
+
+### GitHub-hosted end-to-end demo
+
+The manually dispatched GitHub Actions demo produced a schema-v2 benchmark report, schema-v1
+operational summary, and checksum manifest:
+
+| Measurement | Result | Denominator |
+| --- | ---: | --- |
+| Recovery | 1/1 | Recoverable outbox-failure lane |
+| Safe rejection | 1/1 | Unsupported-schema lane |
+| Audit consistency | 2/2 | Both persisted incident/recovery traces |
+| Duplicate business effects | 0/2 | Both real-integration lanes |
+| Invariant violations | 0/2 | Both real-integration lanes |
+| Recoverable path latency | 4,779.858 ms | One hosted run |
+| Recovery execution latency | 39.274 ms | One hosted execution sample |
+
+The publication fault is an injected failing publisher, not an actual broker outage. Approval uses
+an isolated test identity, deterministic evidence inspection replaces live AI investigation, and
+the sample is a reproducibility result—not a throughput result, availability claim, or production
+service-level objective.
+
+## Reproduce the Demo
+
+The [two-minute demo walkthrough](docs/demo-walkthrough.md) follows the real transactional-outbox,
+incident, verification, approval-bound recovery, unsafe-rejection, and audit paths. It includes the
+exact local command, manual GitHub Actions steps, artifact verification commands, observed hosted
+results, and limitations; the hosted demo performs no live LLM investigation.
+
+## Run locally
+
+### Prerequisites
 
 - Python 3.12+
 - Docker Desktop with Compose v2
 - PowerShell 7 recommended on Windows
 
-All Python versions are pinned in `pyproject.toml`. Container images are pinned in `compose.yaml`.
-Everything needed for the deterministic pipeline is open source or free for local development.
-Live Milestone 3 investigations require an explicitly configured free-tier provider API key;
-tests and the evaluation harness do not. Values in `.env.example` are local-only defaults.
+Runtime and development dependencies are pinned in `pyproject.toml`; container images are pinned in
+`compose.yaml`. No paid service or model is required for the pipeline, tests, recovery benchmarks,
+or demo.
 
-## Start locally (PowerShell)
+### Install and start
 
 ```powershell
-Copy-Item .env.example .env
-docker compose up --build -d
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+docker compose up --build -d --wait
 docker compose ps
 Invoke-RestMethod http://localhost:8000/health/ready
 ```
 
-The API container runs `alembic upgrade head`; workers start only after API readiness.
+The API applies Alembic migrations on startup. Values in `.env.example` are local-only defaults;
+never commit `.env` or provider credentials.
 
-## First complete demo
-
-This submits an order twice with one idempotency key, observes outbox publication and projection,
-republishes the exact event to demonstrate duplicate delivery, and asserts one logical effect:
+### Exercise the reliable pipeline
 
 ```powershell
 docker compose exec api python -m fluxguard.apps.demo
 ```
 
-The output contains real IDs, timestamps, and database counts. Inspect each stage directly:
+This submits an order twice with one idempotency key, waits for normal outbox publication and
+projection, redelivers the exact event, and verifies one logical business effect.
+
+### Run tests and checks
 
 ```powershell
-docker compose exec postgres psql -U fluxguard -d fluxguard -c "SELECT id, idempotency_key, total FROM orders ORDER BY created_at DESC LIMIT 5;"
-docker compose exec postgres psql -U fluxguard -d fluxguard -c "SELECT event_id, attempts, published_at, last_error FROM outbox_events ORDER BY occurred_at DESC LIMIT 5;"
-docker compose exec postgres psql -U fluxguard -d fluxguard -c "SELECT order_id, source_event_id, total FROM order_projections ORDER BY projected_at DESC LIMIT 5;"
-docker compose exec postgres psql -U fluxguard -d fluxguard -c "SELECT event_id, processed_at, last_seen_at, delivery_count FROM processed_events ORDER BY processed_at DESC LIMIT 5;"
-docker compose logs --tail 100 outbox consumer
+.\.venv\Scripts\python.exe -m ruff format --check .
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m pytest -q -m "not integration"
 ```
 
-Manual API request and replay:
-
-```powershell
-$headers = @{ "Idempotency-Key" = "demo-order-001"; "Content-Type" = "application/json" }
-$body = '{"customer_id":"cust_123","items":[{"product_id":"prod_101","quantity":2,"unit_price":"24.99"}],"currency":"USD"}'
-$first = Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/orders -Headers $headers -Body $body
-$second = Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/orders -Headers $headers -Body $body
-$first | ConvertTo-Json -Depth 8
-$second | ConvertTo-Json -Depth 8
-```
-
-## Development and tests
-
-```powershell
-python -m pip install -e ".[dev]"
-python -m ruff format --check .
-python -m ruff check .
-python -m pytest -q -m "not integration"
-```
-
-With the Compose dependencies running, execute the real integration test from the host:
+For PostgreSQL/Redpanda integration tests:
 
 ```powershell
 $env:RUN_INTEGRATION = "1"
+$env:RUN_BENCHMARK_INTEGRATION = "1"
 $env:DATABASE_URL = "postgresql+psycopg://fluxguard:fluxguard_local_only@localhost:15432/fluxguard"
 $env:KAFKA_BOOTSTRAP_SERVERS = "localhost:19092"
-python -m pytest -q tests/integration
+$env:BENCHMARK_POSTGRES_ADMIN_URL = "postgresql+psycopg://fluxguard:fluxguard_local_only@localhost:15432/postgres"
+$env:BENCHMARK_KAFKA_BOOTSTRAP_SERVERS = "localhost:19092"
+.\.venv\Scripts\python.exe -m pytest -q tests/integration --ignore=tests/integration/test_benchmark_demo.py
 ```
 
-If Windows Application Control blocks a native Python dependency such as `xxhash`, run the
-Milestone 3 investigation tests in the project's Linux image instead. This uses an ephemeral
-virtual environment and mounts the workspace read-only:
+CI runs the same bounded recovery-safety integrations. The complete end-to-end demo remains an
+explicit manual workflow.
+
+### Run the isolated recovery demo
+
+With the Compose images built and PostgreSQL/Redpanda healthy:
 
 ```powershell
-docker compose up --build -d --wait postgres redpanda api
 docker compose run --rm --no-deps `
-  -v "${PWD}:/workspace:ro" -w /workspace `
-  -e RUN_INTEGRATION=1 api sh -lc `
-  "python -m venv --system-site-packages /tmp/fluxguard-test && `
-   /tmp/fluxguard-test/bin/pip install --disable-pip-version-check pytest==8.3.5 pytest-cov==6.1.1 && `
-   /tmp/fluxguard-test/bin/python -m pytest -q tests/unit/test_investigations.py `
-     tests/unit/test_llm_validation.py tests/integration/test_investigation_persistence.py"
+  -v "${PWD}:/workspace" -w /workspace `
+  -e BENCHMARK_POSTGRES_ADMIN_URL=postgresql+psycopg://fluxguard:fluxguard_local_only@postgres:5432/postgres `
+  -e BENCHMARK_KAFKA_BOOTSTRAP_SERVERS=redpanda:9092 `
+  api python -m fluxguard.apps.benchmark --mode end-to-end-demo --output-dir build/demo
 ```
 
-The equivalent task shortcuts are `./scripts/dev.ps1 -Task up`, `test`, `lint`, `demo`, and
-`integration`. Stop without deleting durable data using `docker compose down`. To intentionally
-delete only this project's Compose volumes, use `docker compose down --volumes`.
+The runner creates and removes only its owned database, topic, and consumer groups. It writes:
 
-## Endpoints
+```text
+build/demo/<run-id>/
+  benchmark-<run-id>.json
+  operational-summary-<run-id>.json
+  manifest.json
+```
 
-- `POST /api/v1/orders` — requires `Idempotency-Key`.
-- `GET /health/live` — process liveness.
-- `GET /health/ready` — database readiness.
-- `GET /metrics` — process-local basic counters.
-- `GET /docs` — OpenAPI UI.
-
-Development-only incident reads are disabled by default. With `ENVIRONMENT=development` and
-`INCIDENT_API_ENABLED=true`, these endpoints are available:
-
-- `GET /api/v1/incidents`
-- `GET /api/v1/incidents/{incident_id}`
-- `GET /api/v1/incidents/{incident_id}/evidence`
-- `GET /api/v1/incidents/{incident_id}/impact`
-
-Structured logs include correlation IDs on API requests and event IDs during event work.
-See [incident model](docs/incident-model.md) and
-[fault injection](docs/fault-injection.md) for Milestone 2 operations.
-
-Milestone 3 investigation endpoints require development mode and
-`INVESTIGATION_API_ENABLED=true`:
-
-- `POST /api/v1/incidents/{incident_id}/investigations`
-- `GET /api/v1/investigations/{investigation_id}`
-- `GET /api/v1/incidents/{incident_id}/investigations`
-
-Copy `.env.example` to the ignored `.env`, select `LLM_PROVIDER=openrouter|gemini`, and set only
-the matching `OPENROUTER_API_KEY` or `GEMINI_API_KEY`. Provider keys are passed only to the
-investigator container. The configured defaults are explicitly allowlisted free models; paid
-models and automatic provider/model fallback are disabled. See
-[investigation design](docs/investigation-design.md).
-
-## Verified recovery boundary
-
-Recovery review endpoints require both `ENVIRONMENT=development` and
-`RECOVERY_API_ENABLED=true`; the flag defaults to false. Approval still denies every request unless
-a trusted authorizer is injected. There is no HTTP execution endpoint, recovery worker, production
-identity provider, or production execution enablement.
-
-The verifier reloads authoritative incident-owned evidence and business state in PostgreSQL,
-simulates the exact action, checks the declared write set and postconditions, and always rolls the
-simulation back. Mutating execution requires a current approval bound to the exact plan,
-verification, evidence digest, state digest, and policy/verifier versions. Success audit and the
-business mutation commit atomically; failed execution rolls back before sanitized failure audit.
-Retries reuse the same execution ID, while conflicting content and concurrent target access fail
-closed.
-
-The reproducible local validation currently has **122 passing tests**, including three bounded
-concurrency trials, with **0 observed invariant violations** and **0 duplicate business effects**.
-The crash-after-commit case simulates loss of caller acknowledgement by retrying a committed
-execution ID; it is not an actual process-kill durability test. These exploratory local results do
-not demonstrate production recovery availability. Production still requires trusted identity and
-authorization, least-privilege database roles, execution claiming/scheduling, monitoring, and real
-process-crash validation.
-
-## Isolated benchmark demo
-
-The Milestone 5 demo runs against disposable PostgreSQL data and a run-scoped Redpanda topic. From
-PowerShell, use the documented single Docker command in
-[the Milestone 5 design](docs/milestone-5-design.md#single-command-isolated-demo). It writes a
-checksummed bundle below `build/demo/<run-id>`. Inspect and verify it with:
+Inspect and verify the bundle without running another benchmark:
 
 ```powershell
-fluxguard-observe-benchmark build/demo/<run-id>/benchmark-<run-id>.json --format text
-fluxguard-verify-benchmark build/demo/<run-id> --format text
+.\.venv\Scripts\python.exe -m fluxguard.apps.observe_benchmark build/demo/<run-id>/benchmark-<run-id>.json --format text
+.\.venv\Scripts\python.exe -m fluxguard.apps.verify_benchmark build/demo/<run-id> --format json
 ```
 
-The demo uses deterministic evidence inspection and an isolated test identity; it does not call an
-LLM or enable production recovery. Its injected publisher failure is not a broker outage, and its
-small local timing sample is not a production SLA.
+Verification checks file sizes and SHA-256 hashes, Pydantic schemas, run IDs, evidence classes,
+outcome reconstruction, audit consistency, and sensitive-data rejection.
+
+### Run the hosted demo
+
+In GitHub, open **Actions → Isolated end-to-end demo → Run workflow**, select the target branch, and
+run it. The `workflow_dispatch` job creates a unique Compose project, uses a masked workflow-scoped
+database credential, verifies the bundle before upload, and removes its owned services and volumes.
+It receives no model-provider credentials and performs no LLM request.
+
+## Testing and safety model
+
+The Milestone 5 final regression executed the complete unit/integration suite in Linux Docker:
+177 tests passed, migrations reached `0006_recovery_execution`, and Ruff lint/format checks passed.
+
+- Unit tests cover contracts, metric denominators, policy decisions, malformed outputs, artifact
+  verification, and idempotency.
+- PostgreSQL integration tests prove constraints, rollback, append-only audit, approval binding,
+  stale-state rejection, and transactional execution.
+- Redpanda integration tests exercise actual publication, consumption, quarantine, offset behavior,
+  duplicate delivery, and run-scoped resource cleanup.
+- Bounded race tests exercise executor/executor, consumer/executor, and publisher/executor conflicts.
+- Simulation results, deterministic fixtures, live-provider attempts, historical results, and real
+  integrations remain separate evidence classes.
+- Any invariant failure, duplicate effect, undeclared write, unexpected publication, audit mismatch,
+  or sensitive artifact causes verification to fail.
+
+## APIs and operational gates
+
+The public runtime surface is intentionally small:
+
+- `POST /api/v1/orders` requires `Idempotency-Key`.
+- `GET /health/live` and `GET /health/ready` expose process and database health.
+- `GET /metrics` exposes process-local counters.
+- `GET /docs` exposes the FastAPI OpenAPI UI.
+
+Incident, investigation, and recovery-review APIs require explicit development-only flags. These
+flags are exposure gates, not production authentication. Approval still uses a deny-by-default
+authorizer, and there is no HTTP recovery-execution endpoint or production recovery worker.
+
+## Current limitations
+
+- Production approval and recovery execution are disabled because no production identity provider,
+  authorization policy, least-privilege recovery role, or execution scheduler is configured.
+- The investigator shares the application database role; mutation is prevented by the closed tool
+  layer rather than a dedicated read-only database role.
+- Historical live-provider evaluation completed only 1 of 10 attempts. The one validated diagnosis
+  appropriately reported `INSUFFICIENT_EVIDENCE`; the sample establishes neither provider
+  reliability nor definitive root-cause accuracy.
+- The technical demo uses deterministic evidence inspection and makes no live AI request.
+- The publisher-failure scenario is controlled fault injection, not a broker outage.
+- Crash-after-commit coverage simulates lost acknowledgement; it is not a process-kill test.
+- PostgreSQL and Redpanda run as single local nodes. Failover, replication behavior, network
+  partitions, production load, and production availability remain unproven.
+- Process-local counters are not a production monitoring system, and no frontend/operator console
+  is implemented.
+
+## Technology stack
+
+- Python 3.12, FastAPI, Uvicorn, Pydantic, and pydantic-settings
+- PostgreSQL 16, SQLAlchemy 2, psycopg 3, and Alembic
+- Redpanda and confluent-kafka
+- LangGraph, Google GenAI SDK, and HTTPX-based OpenRouter integration
+- structlog
+- pytest, Ruff, Docker Compose, and GitHub Actions
+
+## Documentation
+
+| Document | Scope |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Pipeline flow, reliability boundaries, invariants, investigation, and recovery architecture |
+| [Architecture diagrams](docs/architecture-diagrams.md) | Components, trust boundaries, and the verified recovery sequence |
+| [Demo walkthrough](docs/demo-walkthrough.md) | Two-minute technical narrative, local and hosted reproduction, verified results, and limitations |
+| [Engineering decisions](docs/decisions.md) | Transactional outbox, Kafka client, incident, investigation, and dependency decisions |
+| [Incident model](docs/incident-model.md) | Failure taxonomy, evidence, correlation, impact, and API safety |
+| [Fault injection](docs/fault-injection.md) | Development-only real-Redpanda scenarios and shutdown steps |
+| [Investigation design](docs/investigation-design.md) | Bounded agent, tools, grounding, providers, and historical evaluation limits |
+| [Recovery design](docs/milestone-4-recovery-design.md) | Plans, policy, verifier, approval, executor, locks, and invariants |
+| [Recovery operations](docs/milestone-4-recovery-operations.md) | Safe retries, rollback response, escalation, and production blockers |
+| [Benchmark and demo design](docs/milestone-5-design.md) | Evidence classes, denominators, isolation, observability, demo, and limitations |
+| [Milestones](docs/milestones.md) | Implemented capability history and remaining work |
