@@ -62,7 +62,15 @@ class BenchmarkStage(StrEnum):
 class BenchmarkMode(StrEnum):
     ISOLATION_SMOKE = "ISOLATION_SMOKE"
     RECOVERY_SAFETY = "RECOVERY_SAFETY"
+    EXPANDED_RECOVERY_SAFETY = "EXPANDED_RECOVERY_SAFETY"
     END_TO_END_DEMO = "END_TO_END_DEMO"
+
+
+class ScenarioFamily(StrEnum):
+    ELIGIBLE_RECOVERY = "ELIGIBLE_RECOVERY"
+    UNSAFE_REJECTION = "UNSAFE_REJECTION"
+    DUPLICATE_NO_OP = "DUPLICATE_NO_OP"
+    CONCURRENCY_SAFETY = "CONCURRENCY_SAFETY"
 
 
 class OperationalDisposition(StrEnum):
@@ -158,6 +166,29 @@ class ScenarioIdentity(FrozenContract):
     expected_outcome: BenchmarkOutcome
     concurrency: bool = False
     required: bool = True
+    scenario_family: ScenarioFamily | None = None
+    variation: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+    )
+    trial_seed: int | None = Field(default=None, ge=0, le=2**63 - 1)
+
+    @model_validator(mode="after")
+    def validate_expanded_classification(self) -> "ScenarioIdentity":
+        values = (self.scenario_family, self.variation, self.trial_seed)
+        if any(value is not None for value in values) and any(value is None for value in values):
+            raise ValueError("scenario family, variation, and trial seed must be recorded together")
+        if self.scenario_family == ScenarioFamily.CONCURRENCY_SAFETY and not self.concurrency:
+            raise ValueError("concurrency-safety scenarios must be marked concurrent")
+        if (
+            self.concurrency
+            and self.scenario_family is not None
+            and self.scenario_family != ScenarioFamily.CONCURRENCY_SAFETY
+        ):
+            raise ValueError("classified concurrent scenarios require the concurrency family")
+        return self
 
 
 class AssertionResults(FrozenContract):
@@ -396,6 +427,19 @@ class EvidenceClassSummary(FrozenContract):
     limitations: tuple[str, ...] = Field(default_factory=tuple)
 
 
+class ScenarioGroupSummary(FrozenContract):
+    evidence_class: EvidenceClass
+    scenario_family: ScenarioFamily
+    variation: str = Field(
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+    )
+    trials: int = Field(ge=1)
+    metrics: BenchmarkMetrics
+    latency: tuple[StageLatencySummary, ...]
+
+
 class BenchmarkReport(FrozenContract):
     schema_version: Literal[2] = 2
     run: BenchmarkRunMetadata
@@ -403,6 +447,7 @@ class BenchmarkReport(FrozenContract):
     environment: BenchmarkEnvironment
     results: tuple[ScenarioResult, ...]
     cohorts: tuple[EvidenceClassSummary, ...]
+    scenario_groups: tuple[ScenarioGroupSummary, ...] = ()
     limitations: tuple[str, ...] = Field(default_factory=tuple, max_length=100)
 
     @model_validator(mode="after")
@@ -435,6 +480,28 @@ class BenchmarkReport(FrozenContract):
         }
         if any(cohort.trials != counts[cohort.evidence_class] for cohort in self.cohorts):
             raise ValueError("cohort trial counts do not match report results")
+        expected_groups = {
+            (
+                result.identity.evidence_class,
+                result.identity.scenario_family,
+                result.identity.variation,
+            ): sum(
+                candidate.identity.evidence_class == result.identity.evidence_class
+                and candidate.identity.scenario_family == result.identity.scenario_family
+                and candidate.identity.variation == result.identity.variation
+                for candidate in self.results
+            )
+            for result in self.results
+            if result.identity.scenario_family is not None
+        }
+        actual_groups = {
+            (group.evidence_class, group.scenario_family, group.variation): group.trials
+            for group in self.scenario_groups
+        }
+        if len(actual_groups) != len(self.scenario_groups):
+            raise ValueError("scenario groups must have unique classification keys")
+        if actual_groups != expected_groups:
+            raise ValueError("scenario group counts do not match classified results")
         for limitation in self.limitations:
             if not limitation or len(limitation) > 500:
                 raise ValueError("limitations must contain between 1 and 500 characters")
