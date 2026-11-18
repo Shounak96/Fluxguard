@@ -55,6 +55,7 @@ from fluxguard.packages.contracts.benchmarks import (
     BenchmarkStage,
     EvidenceClass,
     SanitizedError,
+    ScenarioFamily,
     ScenarioIdentity,
     ScenarioResult,
     StageTiming,
@@ -97,6 +98,102 @@ class ScenarioTraceState:
     plan_id: UUID | None = None
     execution_id: UUID | None = None
     additional_reason_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ExpandedScenarioSpec:
+    scenario_id: str
+    scenario_family: ScenarioFamily
+    variation: str
+    trial: int
+    trial_seed: int
+    expected_outcome: BenchmarkOutcome
+    concurrency: bool = False
+
+
+def _expanded_trial_seed(
+    base_seed: int,
+    family: ScenarioFamily,
+    variation: str,
+    trial: int,
+) -> int:
+    material = f"{base_seed}:{family.value}:{variation}:{trial}".encode()
+    return int.from_bytes(hashlib.sha256(material).digest()[:8], "big") & (2**63 - 1)
+
+
+def expanded_recovery_scenario_schedule(
+    *,
+    seed: int,
+    family_trials: int,
+    concurrency_trials: int,
+) -> tuple[ExpandedScenarioSpec, ...]:
+    if seed < 0:
+        raise ValueError("benchmark seed must be non-negative")
+    if not 1 <= family_trials <= 100 or not 1 <= concurrency_trials <= 100:
+        raise ValueError("expanded benchmark trial counts must be between 1 and 100")
+
+    eligible = (
+        ("approved-eligible-event-replay", BenchmarkOutcome.RECOVERED),
+        ("approved-eligible-outbox-reschedule", BenchmarkOutcome.RECOVERED),
+    )
+    unsafe = (
+        ("unsupported-schema-rejection", BenchmarkOutcome.SAFELY_REJECTED),
+        ("malformed-event-rejection", BenchmarkOutcome.SAFELY_REJECTED),
+        ("invalid-financial-total-rejection", BenchmarkOutcome.SAFELY_REJECTED),
+        ("missing-evidence-rejection", BenchmarkOutcome.SAFELY_REJECTED),
+        ("foreign-evidence-rejection", BenchmarkOutcome.SAFELY_REJECTED),
+        ("stale-approval-rejection", BenchmarkOutcome.SAFELY_REJECTED),
+        ("expired-approval-rejection", BenchmarkOutcome.SAFELY_REJECTED),
+    )
+    no_op = (("verified-duplicate-event-no-op", BenchmarkOutcome.VERIFIED_NO_OP),)
+    concurrency = (
+        ("two-executors", BenchmarkOutcome.RECOVERED),
+        ("consumer-versus-executor", BenchmarkOutcome.OPERATIONAL_FAILURE),
+        ("publisher-versus-executor", BenchmarkOutcome.RECOVERED),
+    )
+
+    specs: list[ExpandedScenarioSpec] = []
+
+    def append_family(
+        family: ScenarioFamily,
+        variations: tuple[tuple[str, BenchmarkOutcome], ...],
+    ) -> None:
+        offset = _expanded_trial_seed(seed, family, "schedule", 1) % len(variations)
+        for trial in range(1, family_trials + 1):
+            variation, expected = variations[(offset + trial - 1) % len(variations)]
+            specs.append(
+                ExpandedScenarioSpec(
+                    scenario_id=variation,
+                    scenario_family=family,
+                    variation=variation,
+                    trial=trial,
+                    trial_seed=_expanded_trial_seed(seed, family, variation, trial),
+                    expected_outcome=expected,
+                )
+            )
+
+    append_family(ScenarioFamily.ELIGIBLE_RECOVERY, eligible)
+    append_family(ScenarioFamily.UNSAFE_REJECTION, unsafe)
+    append_family(ScenarioFamily.DUPLICATE_NO_OP, no_op)
+    for variation, expected in concurrency:
+        for trial in range(1, concurrency_trials + 1):
+            specs.append(
+                ExpandedScenarioSpec(
+                    scenario_id=variation,
+                    scenario_family=ScenarioFamily.CONCURRENCY_SAFETY,
+                    variation=variation,
+                    trial=trial,
+                    trial_seed=_expanded_trial_seed(
+                        seed,
+                        ScenarioFamily.CONCURRENCY_SAFETY,
+                        variation,
+                        trial,
+                    ),
+                    expected_outcome=expected,
+                    concurrency=True,
+                )
+            )
+    return tuple(specs)
 
 
 class IsolatedBenchmarkAuthorizer(RecoveryExecutionAuthorizer):
@@ -513,23 +610,32 @@ class RecoverySafetyScenarioSuite:
         operation,
         trial: int = 1,
         concurrency: bool = False,
+        scenario_family: ScenarioFamily | None = None,
+        variation: str | None = None,
+        trial_seed: int | None = None,
     ) -> ScenarioResult:
         self.trace = ScenarioTraceState()
         started = time.monotonic()
+        previous_random = self.random
+        if trial_seed is not None:
+            self.random = random.Random(trial_seed)
         try:
-            observation: ScenarioObservation = operation()
-        except Exception as error:
-            observation = ScenarioObservation(
-                actual_outcome=BenchmarkOutcome.OPERATIONAL_FAILURE,
-                assertions=AssertionResults(),
-                error=SanitizedError(
-                    category="UNEXPECTED_SCENARIO_ERROR",
-                    stage=BenchmarkStage.END_TO_END,
-                    retryable=False,
-                    message=f"scenario failed with {type(error).__name__}",
-                ),
-                limitations=["scenario did not produce conclusive safety assertions"],
-            )
+            try:
+                observation: ScenarioObservation = operation()
+            except Exception as error:
+                observation = ScenarioObservation(
+                    actual_outcome=BenchmarkOutcome.OPERATIONAL_FAILURE,
+                    assertions=AssertionResults(),
+                    error=SanitizedError(
+                        category="UNEXPECTED_SCENARIO_ERROR",
+                        stage=BenchmarkStage.END_TO_END,
+                        retryable=False,
+                        message=f"scenario failed with {type(error).__name__}",
+                    ),
+                    limitations=["scenario did not produce conclusive safety assertions"],
+                )
+        finally:
+            self.random = previous_random
         observation.timings.append(
             StageTiming(
                 stage=BenchmarkStage.END_TO_END,
@@ -564,6 +670,9 @@ class RecoverySafetyScenarioSuite:
                 evidence_class=evidence_class,
                 expected_outcome=expected,
                 concurrency=concurrency,
+                scenario_family=scenario_family,
+                variation=variation,
+                trial_seed=trial_seed,
             ),
             actual_outcome=observation.actual_outcome,
             assertions=observation.assertions,
@@ -1279,6 +1388,41 @@ class RecoverySafetyScenarioSuite:
             )
         return results
 
+    def run_expanded(self) -> list[ScenarioResult]:
+        operations = {
+            "approved-eligible-event-replay": self._approved_replay,
+            "approved-eligible-outbox-reschedule": self._outbox_reschedule,
+            "verified-duplicate-event-no-op": lambda: self._approved_replay(already_processed=True),
+            "unsupported-schema-rejection": lambda: self._unsafe_payload("unsupported-schema"),
+            "malformed-event-rejection": lambda: self._unsafe_payload("malformed-event"),
+            "invalid-financial-total-rejection": lambda: self._unsafe_payload("invalid-total"),
+            "missing-evidence-rejection": lambda: self._evidence_rejection(foreign=False),
+            "foreign-evidence-rejection": lambda: self._evidence_rejection(foreign=True),
+            "stale-approval-rejection": lambda: self._stale_or_expired(expired=False),
+            "expired-approval-rejection": lambda: self._stale_or_expired(expired=True),
+            "two-executors": self._two_executors,
+            "consumer-versus-executor": self._consumer_executor,
+            "publisher-versus-executor": self._publisher_executor,
+        }
+        return [
+            self._record(
+                scenario_id=spec.scenario_id,
+                trial=spec.trial,
+                expected=spec.expected_outcome,
+                evidence_class=EvidenceClass.REAL_INTEGRATION,
+                operation=operations[spec.variation],
+                concurrency=spec.concurrency,
+                scenario_family=spec.scenario_family,
+                variation=spec.variation,
+                trial_seed=spec.trial_seed,
+            )
+            for spec in expanded_recovery_scenario_schedule(
+                seed=self.context.seed,
+                family_trials=self.context.serial_trials,
+                concurrency_trials=self.context.concurrency_trials,
+            )
+        ]
+
 
 def run_recovery_safety_scenarios(
     context: BenchmarkScenarioContext,
@@ -1286,5 +1430,15 @@ def run_recovery_safety_scenarios(
     suite = RecoverySafetyScenarioSuite(context)
     try:
         return suite.run()
+    finally:
+        suite.close()
+
+
+def run_expanded_recovery_safety_scenarios(
+    context: BenchmarkScenarioContext,
+) -> list[ScenarioResult]:
+    suite = RecoverySafetyScenarioSuite(context)
+    try:
+        return suite.run_expanded()
     finally:
         suite.close()

@@ -97,6 +97,11 @@ The remaining real outcomes were one verified no-op and three expected operation
 consumer/executor race. The simulation injected a transactional failure and verified rollback; it
 was not a real process crash.
 
+An [expanded local recovery experiment](docs/expanded-recovery-benchmark.md) subsequently recorded
+120 `REAL_INTEGRATION` attempts across four families and 13 scenario variations. The experiment is
+reported separately from the original Milestone 5 benchmark and is not a production reliability or
+statistical-independence claim.
+
 ### GitHub-hosted end-to-end demo
 
 The manually dispatched GitHub Actions demo produced a schema-v2 benchmark report, schema-v1
@@ -290,4 +295,5 @@ authorizer, and there is no HTTP recovery-execution endpoint or production recov
 | [Recovery design](docs/milestone-4-recovery-design.md) | Plans, policy, verifier, approval, executor, locks, and invariants |
 | [Recovery operations](docs/milestone-4-recovery-operations.md) | Safe retries, rollback response, escalation, and production blockers |
 | [Benchmark and demo design](docs/milestone-5-design.md) | Evidence classes, denominators, isolation, observability, demo, and limitations |
+| [Expanded recovery benchmark](docs/expanded-recovery-benchmark.md) | 120-trial experiment methodology, results, latency coverage, provenance, and limitations |
 | [Milestones](docs/milestones.md) | Implemented capability history and remaining work |

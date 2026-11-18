@@ -14,6 +14,7 @@ from fluxguard.packages.contracts.benchmarks import (
     EvidenceClass,
     EvidenceClassSummary,
     MetricRate,
+    ScenarioGroupSummary,
     ScenarioResult,
     StageLatencySummary,
 )
@@ -177,12 +178,48 @@ def build_benchmark_report(
                 limitations=tuple(cohort_limitations),
             )
         )
+    group_keys = sorted(
+        {
+            (
+                item.identity.evidence_class,
+                item.identity.scenario_family,
+                item.identity.variation,
+            )
+            for item in ordered
+            if item.identity.scenario_family is not None
+        },
+        key=lambda item: (
+            list(EvidenceClass).index(item[0]),
+            item[1].value,
+            item[2],
+        ),
+    )
+    scenario_groups = []
+    for evidence_class, family, variation in group_keys:
+        group_results = [
+            item
+            for item in ordered
+            if item.identity.evidence_class == evidence_class
+            and item.identity.scenario_family == family
+            and item.identity.variation == variation
+        ]
+        scenario_groups.append(
+            ScenarioGroupSummary(
+                evidence_class=evidence_class,
+                scenario_family=family,
+                variation=variation,
+                trials=len(group_results),
+                metrics=calculate_metrics(group_results),
+                latency=calculate_latency(group_results),
+            )
+        )
     return BenchmarkReport(
         run=run,
         configuration=configuration,
         environment=environment,
         results=ordered,
         cohorts=tuple(cohorts),
+        scenario_groups=tuple(scenario_groups),
         limitations=tuple(sorted(set(limitations or []))),
     )
 

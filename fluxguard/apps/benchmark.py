@@ -18,7 +18,10 @@ from fluxguard.packages.common.benchmark_runner import (
     PostgresBenchmarkResources,
     collect_environment,
 )
-from fluxguard.packages.common.benchmark_scenarios import run_recovery_safety_scenarios
+from fluxguard.packages.common.benchmark_scenarios import (
+    run_expanded_recovery_safety_scenarios,
+    run_recovery_safety_scenarios,
+)
 from fluxguard.packages.contracts.benchmarks import (
     BenchmarkMode,
     BenchmarkOperationalSummary,
@@ -33,15 +36,34 @@ def _bounded_trials(value: str) -> int:
     return parsed
 
 
+def _nonnegative_seed(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("seed must be non-negative")
+    return parsed
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run an isolated FluxGuard benchmark")
     parser.add_argument(
         "--mode",
         required=True,
-        choices=["isolation-smoke", "recovery-safety", "end-to-end-demo"],
+        choices=[
+            "isolation-smoke",
+            "recovery-safety",
+            "expanded-recovery-safety",
+            "end-to-end-demo",
+        ],
     )
-    parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--serial-trials", type=_bounded_trials, default=1)
+    parser.add_argument("--seed", type=_nonnegative_seed, default=1)
+    parser.add_argument(
+        "--serial-trials",
+        "--family-trials",
+        dest="serial_trials",
+        type=_bounded_trials,
+        default=1,
+        help="trials per serial family in expanded mode (default: 1)",
+    )
     parser.add_argument("--concurrency-trials", type=_bounded_trials, default=3)
     parser.add_argument(
         "--kafka-bootstrap-servers",
@@ -92,6 +114,7 @@ def main() -> int:
         postgres = PostgresBenchmarkResources(admin_database_url, repository_root)
         kafka = KafkaBenchmarkResources(arguments.kafka_bootstrap_servers)
         recovery_mode = arguments.mode == "recovery-safety"
+        expanded_recovery_mode = arguments.mode == "expanded-recovery-safety"
         demo_mode = arguments.mode == "end-to-end-demo"
         runner = IsolationSmokeRunner(
             postgres=postgres,
@@ -100,6 +123,8 @@ def main() -> int:
             scenario_executor=(
                 run_end_to_end_demo
                 if demo_mode
+                else run_expanded_recovery_safety_scenarios
+                if expanded_recovery_mode
                 else run_recovery_safety_scenarios
                 if recovery_mode
                 else None
@@ -107,6 +132,8 @@ def main() -> int:
             mode=(
                 BenchmarkMode.END_TO_END_DEMO
                 if demo_mode
+                else BenchmarkMode.EXPANDED_RECOVERY_SAFETY
+                if expanded_recovery_mode
                 else BenchmarkMode.RECOVERY_SAFETY
                 if recovery_mode
                 else BenchmarkMode.ISOLATION_SMOKE
@@ -114,6 +141,8 @@ def main() -> int:
             benchmark_name=(
                 "milestone-5-end-to-end-demo"
                 if demo_mode
+                else "expanded-recovery-safety"
+                if expanded_recovery_mode
                 else "milestone-5-recovery-safety"
                 if recovery_mode
                 else "milestone-5-isolation-smoke"
